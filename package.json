@@ -1,0 +1,44 @@
+{
+  "name": "fund-bot",
+  "version": "1.0.0",
+  "description": "Claude-powered Slack bot for 210k Capital fund data and daily reports",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "tsc",
+    "deploy": "vercel --prod",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "keywords": [
+    "slack",
+    "bot",
+    "claude",
+    "google-sheets",
+    "fund-management"
+  ],
+  "author": "210k Capital",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.28.0",
+    "@slack/bolt": "^3.17.1",
+    "@slack/web-api": "^7.0.2",
+    "googleapis": "^131.0.0",
+    "date-fns": "^3.0.6",
+    "date-fns-tz": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3",
+    "vercel": "^33.0.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.1"
+}
+
