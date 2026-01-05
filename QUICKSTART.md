@@ -20,7 +20,7 @@ The project is fully set up with:
 
 ```bash
 cd /Users/duke/development/fund-bot
-pnpm install
+npm install
 ```
 
 ### 2. Set Up Services (30-45 minutes)
@@ -83,10 +83,10 @@ CRON_SECRET=your-random-secret-here
 
 ```bash
 # Type check
-pnpm type-check
+npm run type-check
 
 # Run dev server
-pnpm dev
+npm run dev
 ```
 
 The local server will start at `http://localhost:3000`
@@ -95,7 +95,7 @@ The local server will start at `http://localhost:3000`
 
 ```bash
 # Install Vercel CLI (if not already installed)
-pnpm add -g vercel
+npm install -g vercel
 
 # Login
 vercel login

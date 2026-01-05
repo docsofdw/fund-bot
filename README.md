@@ -26,7 +26,7 @@ Before you begin, you'll need:
 2. **Google Cloud Project** with Sheets API enabled
 3. **Anthropic API Key** for Claude
 4. **Vercel Account** (free tier works)
-5. **pnpm** package manager installed
+5. **Node.js 20+** and **npm** installed
 
 ## 🚀 Setup Guide
 
@@ -40,7 +40,7 @@ cd fund-bot
 ### 2. Install Dependencies
 
 ```bash
-pnpm install
+npm install
 ```
 
 ### 3. Configure Slack App
@@ -135,7 +135,7 @@ CRON_SECRET=your-random-secret-string
 
 ```bash
 # Install Vercel CLI
-pnpm add -g vercel
+npm install -g vercel
 
 # Login to Vercel
 vercel login
@@ -193,16 +193,16 @@ The bot automatically posts reports to the configured `DAILY_REPORTS_CHANNEL_ID`
 
 ```bash
 # Install dependencies
-pnpm install
+npm install
 
 # Run type checking
-pnpm type-check
+npm run type-check
 
 # Run linting
-pnpm lint
+npm run lint
 
 # Run local dev server
-pnpm dev
+npm run dev
 ```
 
 For local development with Slack events, you'll need to use Socket Mode or ngrok to expose your local server.
