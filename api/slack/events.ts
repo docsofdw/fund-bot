@@ -126,14 +126,17 @@ async function handleEvent(event: any) {
   // Mark event as processed
   processedEvents.add(eventId);
   console.log('[Dedupe] Processing new event:', eventId);
+  console.log('[Event] Full event data:', JSON.stringify(event, null, 2));
 
   // Ignore bot messages
   if (bot_id) {
+    console.log('[Filter] Ignoring bot message');
     return;
   }
 
   // Ignore if no text
   if (!text) {
+    console.log('[Filter] Ignoring message with no text');
     return;
   }
 
@@ -142,7 +145,10 @@ async function handleEvent(event: any) {
   const isDM = channel_type === 'im';
   const isListenChannel = LISTEN_ALL_CHANNELS.includes(channel);
 
+  console.log('[Filter] isMention:', isMention, 'isDM:', isDM, 'isListenChannel:', isListenChannel);
+
   if (!isMention && !isDM && !isListenChannel) {
+    console.log('[Filter] Ignoring message - not a mention, DM, or in listen channel');
     return;
   }
 
