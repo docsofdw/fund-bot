@@ -2,18 +2,18 @@
 
 import { format, formatInTimeZone } from 'date-fns-tz';
 
-const ET_TIMEZONE = 'America/New_York';
+const CT_TIMEZONE = 'America/Chicago';
 
 export function formatDateET(date: Date, formatStr: string = 'EEEE, MMMM d, yyyy'): string {
-  return formatInTimeZone(date, ET_TIMEZONE, formatStr);
+  return formatInTimeZone(date, CT_TIMEZONE, formatStr);
 }
 
 export function formatTimeET(date: Date, formatStr: string = 'h:mm a'): string {
-  return formatInTimeZone(date, ET_TIMEZONE, formatStr);
+  return formatInTimeZone(date, CT_TIMEZONE, formatStr);
 }
 
 export function formatDateTimeET(date: Date, formatStr: string = 'EEEE, MMMM d, yyyy h:mm a'): string {
-  return formatInTimeZone(date, ET_TIMEZONE, formatStr);
+  return formatInTimeZone(date, CT_TIMEZONE, formatStr);
 }
 
 export function isWeekday(date: Date = new Date()): boolean {
@@ -26,7 +26,7 @@ export function getTodayET(): Date {
 }
 
 export function getGreeting(): string {
-  const hour = parseInt(formatInTimeZone(new Date(), ET_TIMEZONE, 'H'));
+  const hour = parseInt(formatInTimeZone(new Date(), CT_TIMEZONE, 'H'));
   
   if (hour < 12) return '☀️ Good Morning';
   if (hour < 17) return '☀️ Good Afternoon';

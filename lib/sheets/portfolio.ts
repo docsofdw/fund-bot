@@ -21,8 +21,8 @@ export async function getPortfolioSnapshot(): Promise<PortfolioSnapshot> {
     btcPrice: parseNumber(data[2]?.[1]),
     bitcoinAUM: parseNumber(data[3]?.[1]),
     navAUM: parseNumber(data[0]?.[4]),
-    fundMTD: parsePercent(data[1]?.[4]),
-    btcMTD: parsePercent(data[1]?.[6]),
+    fundMTD: parsePercent(data[0]?.[5]),  // Row 1, Col F
+    btcMTD: parsePercent(data[2]?.[5]),   // Row 3, Col F
     timestamp: new Date(),
   };
 }
@@ -76,11 +76,11 @@ export async function getAllPositions(): Promise<Position[]> {
       positions.push({
         name,
         ticker: data[row][1] || undefined,
-        quantity: parseNumber(data[row][2]),
-        price: parseNumber(data[row][3]),
-        value: parseNumber(data[row][4]),
-        weight: parsePercent(data[row][5]),
-        delta: parseNumber(data[row][6]),
+        quantity: parseNumber(data[row][3]),
+        price: parseNumber(data[row][5]),
+        value: parseNumber(data[row][6]),
+        weight: parsePercent(data[row][9]),
+        delta: parsePercent(data[row][10]),
         category,
       });
 
@@ -92,26 +92,53 @@ export async function getAllPositions(): Promise<Position[]> {
 }
 
 export async function getCategoryBreakdown(): Promise<CategoryBreakdown[]> {
-  const positions = await getAllPositions();
-  const categories: Record<PositionCategory, CategoryBreakdown> = {
-    'BTC Spot': { category: 'BTC Spot', totalValue: 0, weight: 0, positions: [] },
-    'BTC DeFi': { category: 'BTC DeFi', totalValue: 0, weight: 0, positions: [] },
-    'BTC Derivatives': { category: 'BTC Derivatives', totalValue: 0, weight: 0, positions: [] },
-    'BTC Equities': { category: 'BTC Equities', totalValue: 0, weight: 0, positions: [] },
-    'BTC Fungibles': { category: 'BTC Fungibles', totalValue: 0, weight: 0, positions: [] },
-    'Alt Tokens': { category: 'Alt Tokens', totalValue: 0, weight: 0, positions: [] },
-    'Fund Investments': { category: 'Fund Investments', totalValue: 0, weight: 0, positions: [] },
-    'Cash': { category: 'Cash', totalValue: 0, weight: 0, positions: [] },
-  };
-
-  for (const position of positions) {
-    const category = categories[position.category];
-    category.positions.push(position);
-    category.totalValue += position.value;
-    category.weight += position.weight;
+  const sheetId = config.sheets.portfolioSheetId;
+  const data = await getSheetData(sheetId, SHEET_CONFIG.ranges.portfolioMetrics);
+  
+  // Sub-Categories section starts at row 89 (index 11 in the portfolioMetrics range which starts at row 78)
+  // Row 88 (index 10) is the header: ['Sub-Categories', 'USD', 'BTC', '%', '', 'Delta', 'Target']
+  // Data starts at row 89 (index 11)
+  
+  const breakdown: CategoryBreakdown[] = [];
+  const startRow = 11; // Row 89 in sheet = index 11 in this range
+  
+  for (let i = startRow; i < data.length; i++) {
+    const row = data[i];
+    const categoryName = row[0];
+    
+    // Stop at Total row or empty row
+    if (!categoryName || categoryName === 'Total') {
+      break;
+    }
+    
+    const value = parseNumber(row[1]);
+    const weight = parsePercent(row[3]);
+    
+    // Map sheet category names to our PositionCategory type
+    // Skip categories we don't want to display
+    if (categoryName === 'Debt' || 
+        categoryName === 'Alt Tokens' || 
+        categoryName === 'BTC Fungibles' || 
+        categoryName === 'BTC DeFi') {
+      continue;
+    }
+    
+    let category: PositionCategory;
+    if (categoryName === 'BTC') {
+      category = 'BTC Spot';
+    } else {
+      category = categoryName as PositionCategory;
+    }
+    
+    breakdown.push({
+      category,
+      totalValue: value,
+      weight,
+      positions: [], // We're not fetching individual positions here
+    });
   }
-
-  return Object.values(categories).filter((cat) => cat.positions.length > 0);
+  
+  return breakdown;
 }
 
 export async function getTopPositions(limit: number = 5): Promise<Position[]> {

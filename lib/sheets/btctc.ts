@@ -4,6 +4,7 @@ import { config } from '../config';
 import { SHEET_CONFIG } from '../../config/sheets';
 import { getSheetData, parseNumber, parsePercent } from './client';
 import { BTCTCCompany, BTCTCSnapshot, BTCTCMover } from '../../types';
+import { getStockPriceWithFallback } from '../external/stock-price';
 
 export async function getBTCTCSnapshot(): Promise<BTCTCSnapshot> {
   const sheetId = config.sheets.btctcSheetId;
@@ -54,21 +55,29 @@ export async function getBTCTCMovers(limit: number = 5): Promise<{
     .filter((c) => c.oneDayChangePercent !== 0)
     .sort((a, b) => b.oneDayChangePercent - a.oneDayChangePercent);
 
-  const gainers = sorted.slice(0, limit).map((c) => ({
-    company: c.company,
-    ticker: c.ticker,
-    changePercent: c.oneDayChangePercent,
-    price: c.price,
-    mNAV: c.dilutedMNAV,
-  }));
+  const topGainers = sorted.slice(0, limit);
+  const topLosers = sorted.slice(-limit).reverse();
 
-  const losers = sorted.slice(-limit).reverse().map((c) => ({
-    company: c.company,
-    ticker: c.ticker,
-    changePercent: c.oneDayChangePercent,
-    price: c.price,
-    mNAV: c.dilutedMNAV,
-  }));
+  // Fetch real-time prices for movers with $0 or low prices
+  const gainers = await Promise.all(
+    topGainers.map(async (c) => ({
+      company: c.company,
+      ticker: c.ticker,
+      changePercent: c.oneDayChangePercent,
+      price: await getStockPriceWithFallback(c.ticker, c.price),
+      mNAV: c.dilutedMNAV,
+    }))
+  );
+
+  const losers = await Promise.all(
+    topLosers.map(async (c) => ({
+      company: c.company,
+      ticker: c.ticker,
+      changePercent: c.oneDayChangePercent,
+      price: await getStockPriceWithFallback(c.ticker, c.price),
+      mNAV: c.dilutedMNAV,
+    }))
+  );
 
   return { gainers, losers };
 }

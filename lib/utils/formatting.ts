@@ -9,6 +9,18 @@ export function formatCurrency(value: number, decimals: number = 0): string {
   }).format(value);
 }
 
+export function formatStockPrice(value: number): string {
+  // Show full precision - no rounding
+  // Remove trailing zeros but keep at least 2 decimals
+  const formatted = value.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 10, // Allow up to 10 decimals for precision
+  });
+  return formatted;
+}
+
 export function formatNumber(value: number, decimals: number = 2): string {
   return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: decimals,

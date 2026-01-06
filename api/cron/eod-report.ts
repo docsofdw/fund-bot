@@ -5,8 +5,8 @@ import { config } from '../../lib/config';
 import { postMessage } from '../../lib/slack/client';
 import { getPortfolioSnapshot, getPortfolioMetrics, getAllPositions } from '../../lib/sheets/portfolio';
 import { getBTCTCMovers } from '../../lib/sheets/btctc';
-import { formatCurrency, formatNumber, formatPercent, formatPercentChange } from '../../lib/utils/formatting';
-import { formatDateET, isWeekday } from '../../lib/utils/dates';
+import { formatCurrency, formatNumber, formatPercent, formatPercentChange, formatStockPrice } from '../../lib/utils/formatting';
+import { formatDateET, formatTimeET, isWeekday } from '../../lib/utils/dates';
 import {
   createHeaderBlock,
   createSectionBlock,
@@ -33,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       getPortfolioSnapshot(),
       getPortfolioMetrics(),
       getAllPositions(),
-      getBTCTCMovers(5),
+      getBTCTCMovers(3),
     ]);
 
     // Calculate daily change (would need historical data for accurate calculation)
@@ -55,11 +55,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }));
 
     // Build message
-    const dateStr = formatDateET(new Date());
+    const now = new Date();
+    const dateStr = formatDateET(now);
+    const timeStr = formatTimeET(now);
     
     const blocks = [
       createHeaderBlock(`🌙 End of Day — Fund Summary`),
-      createSectionBlock(`*${dateStr}*`),
+      createSectionBlock(`*${dateStr}* • ${timeStr} CT`),
+      createSectionBlock(
+        `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n` +
+        `_Data from <https://docs.google.com/spreadsheets/d/1R5ZXjN3gDb7CVTrbUdqQU_HDLM2cFVUGS5CNynslAzE/edit?gid=777144457#gid=777144457|210k Portfolio Stats>_`
+      ),
       createDividerBlock(),
       
       createSectionBlock(
@@ -80,23 +86,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       createDividerBlock(),
       
       createSectionBlock(
-        `*🏢 BTCTC MARKET MOVERS*\n` +
-        `\n*Top Gainers:*\n` +
+        `*📊 BTCTC MOVERS*\n\n` +
+        `*Top Gainers:*\n` +
         btctcMovers.gainers
-          .map((m) => `${formatPercentChange(m.changePercent)} ${m.company} (${m.ticker})`)
+          .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
           .join('\n') +
         `\n\n*Top Losers:*\n` +
         btctcMovers.losers
-          .map((m) => `${formatPercentChange(m.changePercent)} ${m.company} (${m.ticker})`)
-          .join('\n')
+          .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
+          .join('\n') +
+        `\n\n_Data from <https://docs.google.com/spreadsheets/d/1_whntepzncCFsn-K1oyL5Epqh5D6mauAOnb_Zs7svkk/edit?gid=0#gid=0|BTCTCs Master Sheet>_`
       ),
       
       createDividerBlock(),
       
-      createSectionBlock(
-        `BTC Price: ${formatCurrency(snapshot.btcPrice)}\n\n` +
-        `See you tomorrow! 🌙`
-      ),
+      createSectionBlock(`See you tomorrow! 🌙`),
     ];
 
     // Post to Slack

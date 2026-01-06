@@ -1,31 +1,28 @@
-// Morning report cron job (9:00 AM ET)
+#!/usr/bin/env ts-node
 
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { config } from '../../lib/config';
-import { postMessage } from '../../lib/slack/client';
-import { getPortfolioSnapshot, getPortfolioMetrics, getCategoryBreakdown } from '../../lib/sheets/portfolio';
-import { getEquityMovers } from '../../lib/sheets/equities';
-import { formatCurrency, formatNumber, formatPercent } from '../../lib/utils/formatting';
-import { formatDateET, formatTimeET, isWeekday } from '../../lib/utils/dates';
+/**
+ * Manual trigger script for morning report
+ * Usage: npx ts-node run-morning-report.ts
+ */
+
+import { config as dotenvConfig } from 'dotenv';
+dotenvConfig();
+
+import { config } from './lib/config';
+import { postMessage } from './lib/slack/client';
+import { getPortfolioSnapshot, getPortfolioMetrics, getCategoryBreakdown } from './lib/sheets/portfolio';
+import { getEquityMovers } from './lib/sheets/equities';
+import { formatCurrency, formatNumber, formatPercent } from './lib/utils/formatting';
+import { formatDateTimeET } from './lib/utils/dates';
 import {
   createHeaderBlock,
   createSectionBlock,
   createDividerBlock,
-} from '../../lib/slack/blocks';
+} from './lib/slack/blocks';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Verify this is a cron request (Vercel sets this header)
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET || 'development'}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
+async function runMorningReport() {
   try {
-    // Only run on weekdays
-    if (!isWeekday()) {
-      console.log('Skipping morning report - not a weekday');
-      return res.status(200).json({ message: 'Skipped - weekend' });
-    }
+    console.log('📊 Generating morning report...\n');
 
     // Fetch data
     const [snapshot, metrics, categories, equityMovers] = await Promise.all([
@@ -37,12 +34,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Build message
     const now = new Date();
-    const dateStr = formatDateET(now);
-    const timeStr = formatTimeET(now);
+    const dateTimeStr = formatDateTimeET(now);
     
     const blocks = [
       createHeaderBlock(`☀️ Good Morning — Fund Summary`),
-      createSectionBlock(`*${dateStr}* • ${timeStr} CT`),
+      createSectionBlock(`*${dateTimeStr}*`),
       createSectionBlock(
         `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n` +
         `_Data from <https://docs.google.com/spreadsheets/d/1R5ZXjN3gDb7CVTrbUdqQU_HDLM2cFVUGS5CNynslAzE/edit?gid=777144457#gid=777144457|210k Portfolio Stats>_`
@@ -97,19 +93,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ];
 
     // Post to Slack
-    await postMessage(
-      config.channels.dailyReportsId,
-      '☀️ Good Morning — Fund Summary',
-      { blocks }
-    );
+    await postMessage(config.channels.dailyReportsId, '☀️ Good Morning — Fund Summary', { blocks });
 
-    return res.status(200).json({ message: 'Morning report posted successfully' });
+    console.log('✅ Morning report posted successfully!');
   } catch (error) {
-    console.error('Error generating morning report:', error);
-    return res.status(500).json({ 
-      error: 'Failed to generate morning report',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
+    console.error('❌ Error generating morning report:', error);
+    throw error;
   }
 }
+
+runMorningReport();
 
