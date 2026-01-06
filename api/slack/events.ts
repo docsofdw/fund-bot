@@ -5,9 +5,9 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../../lib/config';
 import { LISTEN_ALL_CHANNELS } from '../../config/channels';
 import { postMessage, addReaction } from '../../lib/slack/client';
-import { getPortfolioSnapshot, getPortfolioMetrics } from '../../lib/sheets/portfolio';
+import { getPortfolioSnapshot, getPortfolioMetrics, getTopPositions } from '../../lib/sheets/portfolio';
 import { sendMessage } from '../../lib/claude/client';
-import { buildQuickSystemPrompt } from '../../lib/claude/prompts';
+import { buildSystemPrompt } from '../../lib/claude/prompts';
 import { addMessageToThread, getThreadMessages } from '../../lib/claude/memory';
 
 // Event deduplication - track processed events
@@ -183,15 +183,21 @@ async function handleEvent(event: any) {
 
     // Fetch portfolio data
     console.log('[Sheets] Fetching portfolio data...');
-    const [snapshot, metrics] = await Promise.all([
+    const [snapshot, metrics, topPositions] = await Promise.all([
       getPortfolioSnapshot(),
       getPortfolioMetrics(),
+      getTopPositions(15), // Get top 15 positions
     ]);
     console.log('[Sheets] Portfolio data fetched successfully');
+    console.log('[Sheets] Fetched', topPositions.length, 'positions');
 
     // Build system prompt
     console.log('[Claude] Building system prompt...');
-    const systemPrompt = buildQuickSystemPrompt(snapshot, metrics);
+    const systemPrompt = buildSystemPrompt({ 
+      snapshot, 
+      metrics,
+      positions: topPositions,
+    });
     console.log('[Claude] System prompt built');
 
     // Get conversation history if in a thread
