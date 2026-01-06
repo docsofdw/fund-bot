@@ -110,6 +110,11 @@ async function handleEvent(event: any) {
     return;
   }
 
+  // Ignore if no text
+  if (!text) {
+    return;
+  }
+
   // Ignore messages that don't mention the bot unless in specific channels
   const isMention = type === 'app_mention';
   const isDM = channel_type === 'im';
@@ -119,12 +124,16 @@ async function handleEvent(event: any) {
     return;
   }
 
-  try {
-    // Add thinking reaction
-    await addReaction(channel, ts, 'thinking_face');
+  // Get thread ID (use thread_ts if in a thread, otherwise use ts)
+  const threadId = thread_ts || ts;
 
-    // Get thread ID (use thread_ts if in a thread, otherwise use ts)
-    const threadId = thread_ts || ts;
+  try {
+    // Add thinking reaction (ignore if already added)
+    try {
+      await addReaction(channel, ts, 'thinking_face');
+    } catch (e) {
+      // Ignore already_reacted errors
+    }
 
     // Clean up the message text (remove bot mention)
     const cleanText = text.replace(/<@[A-Z0-9]+>/g, '').trim();
@@ -156,17 +165,24 @@ async function handleEvent(event: any) {
     // Post response
     await postMessage(channel, response, { thread_ts: threadId });
 
-    // Add checkmark reaction
-    await addReaction(channel, ts, 'white_check_mark');
+    // Add checkmark reaction (ignore if already added)
+    try {
+      await addReaction(channel, ts, 'white_check_mark');
+    } catch (e) {
+      // Ignore errors
+    }
   } catch (error) {
     console.error('Error processing message:', error);
     
-    await postMessage(
-      channel,
-      `Sorry, I encountered an error processing your request: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      { thread_ts: thread_ts || ts }
-    );
-
-    await addReaction(channel, ts, 'x');
+    try {
+      await postMessage(
+        channel,
+        `Sorry, I encountered an error processing your request: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { thread_ts: threadId }
+      );
+      await addReaction(channel, ts, 'x');
+    } catch (e) {
+      // Ignore errors when posting error message
+    }
   }
 }
