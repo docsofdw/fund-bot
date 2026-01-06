@@ -1,8 +1,6 @@
 {
-  "version": 2,
   "functions": {
     "api/**/*.ts": {
-      "runtime": "nodejs20.x",
       "memory": 1024,
       "maxDuration": 30
     }
@@ -16,14 +14,6 @@
       "path": "/api/cron/eod-report",
       "schedule": "30 21 * * 1-5"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  },
-  "build": {
-    "env": {
-      "NODE_ENV": "production"
-    }
-  }
+  ]
 }
 

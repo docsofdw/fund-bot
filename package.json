@@ -23,9 +23,9 @@
     "@anthropic-ai/sdk": "^0.28.0",
     "@slack/bolt": "^3.17.1",
     "@slack/web-api": "^7.0.2",
-    "googleapis": "^131.0.0",
-    "date-fns": "^3.0.6",
-    "date-fns-tz": "^2.0.0"
+    "date-fns": "^3.6.0",
+    "date-fns-tz": "^3.0.0",
+    "googleapis": "^131.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
@@ -36,8 +36,6 @@
     "vercel": "^33.0.2"
   },
   "engines": {
-    "node": ">=20.0.0",
-    "npm": ">=10.0.0"
+    "node": "20.x"
   }
 }
-
