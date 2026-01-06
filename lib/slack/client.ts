@@ -1,6 +1,6 @@
 // Slack Web API client
 
-import { WebClient } from '@slack/web-api';
+import { WebClient, Block, KnownBlock } from '@slack/web-api';
 import { config } from '../config';
 
 let slackClient: WebClient | null = null;
@@ -18,7 +18,7 @@ export async function postMessage(
   channel: string,
   text: string,
   options?: {
-    blocks?: unknown[];
+    blocks?: (Block | KnownBlock)[];
     thread_ts?: string;
   }
 ) {
@@ -44,7 +44,7 @@ export async function postEphemeral(
   user: string,
   text: string,
   options?: {
-    blocks?: unknown[];
+    blocks?: (Block | KnownBlock)[];
   }
 ) {
   const client = getSlackClient();
