@@ -112,21 +112,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function handleEvent(event: any) {
-  const { type, user, text, channel, ts, thread_ts, channel_type, bot_id, event_ts } = event;
+  try {
+    const { type, user, text, channel, ts, thread_ts, channel_type, bot_id, event_ts } = event;
 
-  // Create unique event ID
-  const eventId = `${channel}-${ts}-${event_ts || ts}`;
-  
-  // Check if we've already processed this event
-  if (processedEvents.has(eventId)) {
-    console.log('[Dedupe] Ignoring duplicate event:', eventId);
-    return;
-  }
-  
-  // Mark event as processed
-  processedEvents.add(eventId);
-  console.log('[Dedupe] Processing new event:', eventId);
-  console.log('[Event] Full event data:', JSON.stringify(event, null, 2));
+    // Create unique event ID
+    const eventId = `${channel}-${ts}-${event_ts || ts}`;
+    
+    // Check if we've already processed this event
+    if (processedEvents.has(eventId)) {
+      console.log('[Dedupe] Ignoring duplicate event:', eventId);
+      return;
+    }
+    
+    // Mark event as processed
+    processedEvents.add(eventId);
+    console.log('[Dedupe] Processing new event:', eventId);
+    console.log('[Event] Event type:', type, 'Channel:', channel, 'User:', user);
 
   // Ignore bot messages
   if (bot_id) {
@@ -157,15 +158,19 @@ async function handleEvent(event: any) {
 
   try {
     console.log('[Event] Processing message from user:', user, 'in channel:', channel);
+    console.log('[Event] Message text:', text);
+    console.log('[Event] Event type:', type);
     
     // Add thinking reaction (ignore if already added)
     try {
+      console.log('[Reaction] About to add thinking face...');
       await addReaction(channel, ts, 'thinking_face');
       console.log('[Reaction] Added thinking face');
-    } catch (e) {
-      console.log('[Reaction] Thinking face already exists (ignoring)');
+    } catch (e: any) {
+      console.log('[Reaction] Failed to add thinking face:', e?.message || e);
     }
 
+    console.log('[Text] About to clean text...');
     // Clean up the message text (remove bot mention)
     const cleanText = text.replace(/<@[A-Z0-9]+>/g, '').trim();
     console.log('[Text] Cleaned text:', cleanText);
@@ -220,6 +225,10 @@ async function handleEvent(event: any) {
   } catch (error) {
     console.error('[Error] Error processing message:', error);
     console.error('[Error] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
+    console.error('[Error] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    
+    const { channel, ts, thread_ts } = event;
+    const threadId = thread_ts || ts;
     
     try {
       await postMessage(
@@ -231,5 +240,9 @@ async function handleEvent(event: any) {
     } catch (e) {
       console.error('[Error] Failed to post error message:', e);
     }
+  }
+  } catch (outerError) {
+    console.error('[FATAL] Unhandled error in handleEvent:', outerError);
+    console.error('[FATAL] Stack:', outerError instanceof Error ? outerError.stack : 'No stack');
   }
 }
