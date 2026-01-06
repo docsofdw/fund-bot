@@ -97,15 +97,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Handle event
   if (type === 'event_callback' && event) {
-    // Respond quickly to avoid timeout
-    res.status(200).json({ ok: true });
-
-    // Process event asynchronously
-    handleEvent(event).catch((error) => {
+    // Process event (must complete before responding or Vercel kills it)
+    try {
+      await handleEvent(event);
+    } catch (error) {
       console.error('Error handling event:', error);
-    });
-
-    return;
+    }
+    
+    // Respond after processing
+    return res.status(200).json({ ok: true });
   }
 
   return res.status(200).json({ ok: true });
