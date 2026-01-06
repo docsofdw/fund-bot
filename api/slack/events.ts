@@ -128,51 +128,70 @@ async function handleEvent(event: any) {
   const threadId = thread_ts || ts;
 
   try {
+    console.log('[Event] Processing message from user:', user, 'in channel:', channel);
+    
     // Add thinking reaction (ignore if already added)
     try {
       await addReaction(channel, ts, 'thinking_face');
+      console.log('[Reaction] Added thinking face');
     } catch (e) {
-      // Ignore already_reacted errors
+      console.log('[Reaction] Thinking face already exists (ignoring)');
     }
 
     // Clean up the message text (remove bot mention)
     const cleanText = text.replace(/<@[A-Z0-9]+>/g, '').trim();
+    console.log('[Text] Cleaned text:', cleanText);
 
     if (!cleanText) {
+      console.log('[Text] No text after cleaning, sending help message');
       await postMessage(channel, 'How can I help you today?', { thread_ts: threadId });
       return;
     }
 
     // Fetch portfolio data
+    console.log('[Sheets] Fetching portfolio data...');
     const [snapshot, metrics] = await Promise.all([
       getPortfolioSnapshot(),
       getPortfolioMetrics(),
     ]);
+    console.log('[Sheets] Portfolio data fetched successfully');
 
     // Build system prompt
+    console.log('[Claude] Building system prompt...');
     const systemPrompt = buildQuickSystemPrompt(snapshot, metrics);
+    console.log('[Claude] System prompt built');
 
     // Get conversation history if in a thread
     const conversationHistory = getThreadMessages(threadId);
+    console.log('[Memory] Retrieved', conversationHistory.length, 'previous messages');
 
     // Send to Claude
+    console.log('[Claude] Sending message to Claude API...');
     const response = await sendMessage(systemPrompt, cleanText, conversationHistory);
+    console.log('[Claude] Received response:', response.substring(0, 100) + '...');
 
     // Store in thread memory
     addMessageToThread(threadId, 'user', cleanText);
     addMessageToThread(threadId, 'assistant', response);
+    console.log('[Memory] Stored in thread memory');
 
     // Post response
+    console.log('[Slack] Posting response to channel...');
     await postMessage(channel, response, { thread_ts: threadId });
+    console.log('[Slack] Response posted successfully');
 
     // Add checkmark reaction (ignore if already added)
     try {
       await addReaction(channel, ts, 'white_check_mark');
+      console.log('[Reaction] Added checkmark');
     } catch (e) {
-      // Ignore errors
+      console.log('[Reaction] Checkmark already exists or error (ignoring)');
     }
+    
+    console.log('[Event] Processing complete!');
   } catch (error) {
-    console.error('Error processing message:', error);
+    console.error('[Error] Error processing message:', error);
+    console.error('[Error] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     
     try {
       await postMessage(
@@ -182,7 +201,7 @@ async function handleEvent(event: any) {
       );
       await addReaction(channel, ts, 'x');
     } catch (e) {
-      // Ignore errors when posting error message
+      console.error('[Error] Failed to post error message:', e);
     }
   }
 }
