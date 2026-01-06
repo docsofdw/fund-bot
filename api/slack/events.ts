@@ -10,6 +10,15 @@ import { sendMessage } from '../../lib/claude/client';
 import { buildQuickSystemPrompt } from '../../lib/claude/prompts';
 import { addMessageToThread, getThreadMessages } from '../../lib/claude/memory';
 
+// Event deduplication - track processed events
+const processedEvents = new Set<string>();
+const EVENT_TTL = 60000; // 1 minute
+
+// Clean up old processed events every minute
+setInterval(() => {
+  processedEvents.clear();
+}, EVENT_TTL);
+
 // Disable body parsing so we can verify the raw body
 export const config_vercel = {
   api: {
@@ -103,7 +112,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function handleEvent(event: any) {
-  const { type, user, text, channel, ts, thread_ts, channel_type, bot_id } = event;
+  const { type, user, text, channel, ts, thread_ts, channel_type, bot_id, event_ts } = event;
+
+  // Create unique event ID
+  const eventId = `${channel}-${ts}-${event_ts || ts}`;
+  
+  // Check if we've already processed this event
+  if (processedEvents.has(eventId)) {
+    console.log('[Dedupe] Ignoring duplicate event:', eventId);
+    return;
+  }
+  
+  // Mark event as processed
+  processedEvents.add(eventId);
+  console.log('[Dedupe] Processing new event:', eventId);
 
   // Ignore bot messages
   if (bot_id) {
