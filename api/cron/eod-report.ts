@@ -28,13 +28,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ message: 'Skipped - weekend' });
     }
 
-    // Fetch data
+    // Fetch data with timeout tracking
+    const startTime = Date.now();
+    console.log('[EOD Report] Starting data fetch...');
+    
     const [snapshot, metrics, positions, btctcMovers] = await Promise.all([
       getPortfolioSnapshot(),
       getPortfolioMetrics(),
       getAllPositions(),
       getBTCTCMovers(3),
     ]);
+
+    const fetchDuration = Date.now() - startTime;
+    console.log(`[EOD Report] Data fetch completed in ${fetchDuration}ms`);
 
     // Calculate daily change (would need historical data for accurate calculation)
     // For now, we'll show a placeholder
@@ -70,17 +76,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       createSectionBlock(
         `*💰 AUM SNAPSHOT*\n` +
-        `Live AUM:      ${formatCurrency(snapshot.liveAUM)}\n` +
-        `MTM AUM:       ${formatCurrency(snapshot.mtmAUM)}\n` +
-        `BTC Delta:     ${formatNumber(metrics.bitcoinDelta)} BTC`
+        `Live AUM: ${formatCurrency(snapshot.liveAUM)}\n` +
+        `MTM AUM: ${formatCurrency(snapshot.mtmAUM)}\n` +
+        `BTC Delta: ${formatNumber(metrics.bitcoinDelta)} BTC`
       ),
       
       createDividerBlock(),
       
       createSectionBlock(
         `*📊 MONTH-TO-DATE*\n` +
-        `Fund MTD:      ${formatPercent(snapshot.fundMTD)}\n` +
-        `BTC MTD:       ${formatPercent(snapshot.btcMTD)}`
+        `Fund MTD: ${formatPercent(snapshot.fundMTD)}\n` +
+        `BTC MTD: ${formatPercent(snapshot.btcMTD)}`
       ),
       
       createDividerBlock(),
@@ -88,13 +94,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       createSectionBlock(
         `*📊 BTCTC MOVERS*\n\n` +
         `*Top Gainers:*\n` +
-        btctcMovers.gainers
-          .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
-          .join('\n') +
+        (btctcMovers.gainers.length > 0
+          ? btctcMovers.gainers
+              .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
+              .join('\n')
+          : '_No gainers today_') +
         `\n\n*Top Losers:*\n` +
-        btctcMovers.losers
-          .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
-          .join('\n') +
+        (btctcMovers.losers.length > 0
+          ? btctcMovers.losers
+              .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
+              .join('\n')
+          : '_No losers today_') +
         `\n\n_Data from <https://docs.google.com/spreadsheets/d/1_whntepzncCFsn-K1oyL5Epqh5D6mauAOnb_Zs7svkk/edit?gid=0#gid=0|BTCTCs Master Sheet>_`
       ),
       
@@ -110,12 +120,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       { blocks }
     );
 
+    console.log('[EOD Report] Successfully posted to Slack');
     return res.status(200).json({ message: 'EOD report posted successfully' });
   } catch (error) {
-    console.error('Error generating EOD report:', error);
+    console.error('[EOD Report] ERROR:', error);
+    
+    // Try to post error notification to Slack
+    try {
+      await postMessage(
+        config.channels.dailyReportsId,
+        '⚠️ EOD Report Failed',
+        {
+          text: `Failed to generate end-of-day report: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }
+      );
+    } catch (slackError) {
+      console.error('[EOD Report] Failed to send error notification to Slack:', slackError);
+    }
+    
     return res.status(500).json({ 
       error: 'Failed to generate EOD report',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
     });
   }
 }

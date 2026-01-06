@@ -22,23 +22,60 @@ export function getSheetsClient(): sheets_v4.Sheets {
   return sheetsClient;
 }
 
+// Helper to check if data contains "Loading..." values
+function hasLoadingValues(data: string[][]): boolean {
+  return data.some(row => row.some(cell => 
+    typeof cell === 'string' && cell.includes('Loading...')
+  ));
+}
+
+// Helper to wait/sleep
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function getSheetData(
   spreadsheetId: string,
   range: string
 ): Promise<string[][]> {
   const client = getSheetsClient();
+  const maxRetries = 5;
+  const retryDelay = 2000; // 2 seconds
 
-  try {
-    const response = await client.spreadsheets.values.get({
-      spreadsheetId,
-      range,
-    });
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await client.spreadsheets.values.get({
+        spreadsheetId,
+        range,
+      });
 
-    return response.data.values || [];
-  } catch (error) {
-    console.error(`Error fetching sheet data for range ${range}:`, error);
-    throw new Error(`Failed to fetch sheet data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const data = response.data.values || [];
+
+      // Check if data contains "Loading..." values
+      if (hasLoadingValues(data)) {
+        if (attempt < maxRetries) {
+          console.log(`Sheet data contains "Loading..." values. Retrying in ${retryDelay}ms (attempt ${attempt}/${maxRetries})...`);
+          await sleep(retryDelay);
+          continue;
+        } else {
+          console.warn(`Sheet data still contains "Loading..." after ${maxRetries} attempts. Proceeding with available data.`);
+        }
+      }
+
+      return data;
+    } catch (error) {
+      if (attempt === maxRetries) {
+        console.error(`Error fetching sheet data for range ${range}:`, error);
+        throw new Error(`Failed to fetch sheet data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+      
+      console.log(`Error on attempt ${attempt}, retrying...`);
+      await sleep(retryDelay);
+    }
   }
+
+  // Should never reach here, but TypeScript needs this
+  return [];
 }
 
 export async function getBatchSheetData(

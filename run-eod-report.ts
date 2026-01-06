@@ -46,17 +46,17 @@ async function runEODReport() {
       
       createSectionBlock(
         `*💰 AUM SNAPSHOT*\n` +
-        `Live AUM:      ${formatCurrency(snapshot.liveAUM)}\n` +
-        `MTM AUM:       ${formatCurrency(snapshot.mtmAUM)}\n` +
-        `BTC Delta:     ${formatNumber(metrics.bitcoinDelta)} BTC`
+        `Live AUM: ${formatCurrency(snapshot.liveAUM)}\n` +
+        `MTM AUM: ${formatCurrency(snapshot.mtmAUM)}\n` +
+        `BTC Delta: ${formatNumber(metrics.bitcoinDelta)} BTC`
       ),
       
       createDividerBlock(),
       
       createSectionBlock(
         `*📊 MONTH-TO-DATE*\n` +
-        `Fund MTD:      ${formatPercent(snapshot.fundMTD)}\n` +
-        `BTC MTD:       ${formatPercent(snapshot.btcMTD)}`
+        `Fund MTD: ${formatPercent(snapshot.fundMTD)}\n` +
+        `BTC MTD: ${formatPercent(snapshot.btcMTD)}`
       ),
       
       createDividerBlock(),
@@ -64,13 +64,17 @@ async function runEODReport() {
       createSectionBlock(
         `*📊 BTCTC MOVERS*\n\n` +
         `*Top Gainers:*\n` +
-        btctcMovers.gainers
-          .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
-          .join('\n') +
+        (btctcMovers.gainers.length > 0
+          ? btctcMovers.gainers
+              .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
+              .join('\n')
+          : '_No gainers today_') +
         `\n\n*Top Losers:*\n` +
-        btctcMovers.losers
-          .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
-          .join('\n') +
+        (btctcMovers.losers.length > 0
+          ? btctcMovers.losers
+              .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
+              .join('\n')
+          : '_No losers today_') +
         `\n\n_Data from <https://docs.google.com/spreadsheets/d/1_whntepzncCFsn-K1oyL5Epqh5D6mauAOnb_Zs7svkk/edit?gid=0#gid=0|BTCTCs Master Sheet>_`
       ),
       
