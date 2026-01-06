@@ -1,7 +1,7 @@
 // Slack events API handler
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../../lib/config';
 import { LISTEN_ALL_CHANNELS } from '../../config/channels';
 import { postMessage, addReaction } from '../../lib/slack/client';
@@ -10,27 +10,49 @@ import { sendMessage } from '../../lib/claude/client';
 import { buildQuickSystemPrompt } from '../../lib/claude/prompts';
 import { addMessageToThread, getThreadMessages } from '../../lib/claude/memory';
 
+// Disable body parsing so we can verify the raw body
+export const config_vercel = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+// Read raw body from request
+async function getRawBody(req: VercelRequest): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 // Verify Slack request signature
-function verifySlackRequest(req: VercelRequest): boolean {
-  const slackSignature = req.headers['x-slack-signature'] as string;
-  const slackTimestamp = req.headers['x-slack-request-timestamp'] as string;
-
-  if (!slackSignature || !slackTimestamp) {
+function verifySlackSignature(
+  signingSecret: string,
+  signature: string,
+  timestamp: string,
+  rawBody: string
+): boolean {
+  if (!signature || !timestamp) {
     return false;
   }
 
-  // Prevent replay attacks
+  // Prevent replay attacks (5 minute window)
   const currentTime = Math.floor(Date.now() / 1000);
-  if (Math.abs(currentTime - parseInt(slackTimestamp)) > 60 * 5) {
+  if (Math.abs(currentTime - parseInt(timestamp)) > 60 * 5) {
     return false;
   }
 
-  const sigBasestring = `v0:${slackTimestamp}:${JSON.stringify(req.body)}`;
-  const mySignature = `v0=${createHmac('sha256', config.slack.signingSecret)
-    .update(sigBasestring)
+  const sigBasestring = `v0:${timestamp}:${rawBody}`;
+  const mySignature = `v0=${createHmac('sha256', signingSecret)
+    .update(sigBasestring, 'utf8')
     .digest('hex')}`;
 
-  return mySignature === slackSignature;
+  try {
+    return timingSafeEqual(Buffer.from(mySignature), Buffer.from(signature));
+  } catch {
+    return false;
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -38,13 +60,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Get raw body and parse it
+  const rawBody = await getRawBody(req);
+  let body: any;
+  
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return res.status(400).json({ error: 'Invalid JSON' });
+  }
+
   // Verify request is from Slack
-  if (!verifySlackRequest(req)) {
+  const slackSignature = req.headers['x-slack-signature'] as string;
+  const slackTimestamp = req.headers['x-slack-request-timestamp'] as string;
+
+  if (!verifySlackSignature(config.slack.signingSecret, slackSignature, slackTimestamp, rawBody)) {
     console.error('Invalid Slack signature');
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  const { type, challenge, event } = req.body;
+  const { type, challenge, event } = body;
 
   // URL verification challenge
   if (type === 'url_verification') {
@@ -135,4 +170,3 @@ async function handleEvent(event: any) {
     await addReaction(channel, ts, 'x');
   }
 }
-
