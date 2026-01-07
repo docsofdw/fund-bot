@@ -158,10 +158,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       await postMessage(
         config.channels.dailyReportsId,
-        '⚠️ Morning Report Failed',
-        {
-          text: `Failed to generate morning report: ${error instanceof Error ? error.message : 'Unknown error'}`
-        }
+        `⚠️ Morning Report Failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     } catch (slackError) {
       console.error('[Morning Report] Failed to send error notification to Slack:', slackError);

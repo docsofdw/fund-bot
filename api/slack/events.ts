@@ -8,7 +8,21 @@ import { postMessage, addReaction } from '../../lib/slack/client';
 import { getPortfolioSnapshot, getPortfolioMetrics, getTopPositions } from '../../lib/sheets/portfolio';
 import { sendMessage } from '../../lib/claude/client';
 import { buildSystemPrompt } from '../../lib/claude/prompts';
-import { addMessageToThread, getThreadMessages } from '../../lib/claude/memory';
+import { addMessageToThread, getThreadMessages, getThreadStats } from '../../lib/claude/memory';
+import { 
+  validateAndSanitizeInput, 
+  cleanMessageText, 
+  isHelpRequest, 
+  getHelpMessage,
+  getRateLimitMessage,
+  getCostLimitMessage,
+} from '../../lib/utils/input-validation';
+import { checkRateLimit, trackCost } from '../../lib/utils/rate-limiter';
+import { 
+  getCachedResponse, 
+  setCachedResponse, 
+  hashContext,
+} from '../../lib/utils/response-cache';
 
 // Event deduplication - track processed events
 const processedEvents = new Set<string>();
@@ -172,13 +186,61 @@ async function handleEvent(event: any) {
 
     console.log('[Text] About to clean text...');
     // Clean up the message text (remove bot mention)
-    const cleanText = text.replace(/<@[A-Z0-9]+>/g, '').trim();
+    const cleanText = cleanMessageText(text);
     console.log('[Text] Cleaned text:', cleanText);
 
     if (!cleanText) {
       console.log('[Text] No text after cleaning, sending help message');
-      await postMessage(channel, 'How can I help you today?', { thread_ts: threadId });
+      await postMessage(channel, getHelpMessage(), { thread_ts: threadId });
       return;
+    }
+
+    // Check for help request
+    if (isHelpRequest(cleanText)) {
+      console.log('[Help] User requested help');
+      await postMessage(channel, getHelpMessage(), { thread_ts: threadId });
+      try {
+        await addReaction(channel, ts, 'white_check_mark');
+      } catch (e) {
+        console.log('[Reaction] Error adding checkmark (ignoring)');
+      }
+      return;
+    }
+
+    // Validate and sanitize input
+    console.log('[Validation] Validating input...');
+    const validation = validateAndSanitizeInput(cleanText);
+    if (!validation.valid) {
+      console.log('[Validation] Input validation failed:', validation.message);
+      await postMessage(channel, validation.message || 'Invalid input', { thread_ts: threadId });
+      try {
+        await addReaction(channel, ts, 'warning');
+      } catch (e) {
+        console.log('[Reaction] Error adding warning (ignoring)');
+      }
+      return;
+    }
+
+    const sanitizedText = validation.sanitizedText || cleanText;
+
+    // Check rate limits
+    console.log('[RateLimit] Checking rate limits for user:', user);
+    const rateLimit = checkRateLimit(user);
+    if (!rateLimit.allowed) {
+      console.log('[RateLimit] User exceeded rate limit');
+      const message = getRateLimitMessage(rateLimit.remaining, rateLimit.resetTime);
+      await postMessage(channel, message, { thread_ts: threadId });
+      try {
+        await addReaction(channel, ts, 'hourglass');
+      } catch (e) {
+        console.log('[Reaction] Error adding hourglass (ignoring)');
+      }
+      return;
+    }
+
+    // Warn if approaching rate limit
+    if (rateLimit.warning) {
+      console.log('[RateLimit]', rateLimit.warning);
     }
 
     // Fetch portfolio data
@@ -190,6 +252,33 @@ async function handleEvent(event: any) {
     ]);
     console.log('[Sheets] Portfolio data fetched successfully');
     console.log('[Sheets] Fetched', topPositions.length, 'positions');
+
+    // Create context hash for caching
+    const contextHash = hashContext({ snapshot, metrics });
+    console.log('[Cache] Context hash:', contextHash);
+
+    // Check cache first (only for non-threaded conversations)
+    const threadStats = getThreadStats(threadId);
+    const isNewConversation = !threadStats || threadStats.messageCount === 0;
+    
+    if (isNewConversation) {
+      const cachedResponse = getCachedResponse(sanitizedText, contextHash);
+      if (cachedResponse) {
+        console.log('[Cache] Using cached response');
+        await postMessage(channel, cachedResponse, { thread_ts: threadId });
+        
+        // Store in thread memory for continuity
+        addMessageToThread(threadId, 'user', sanitizedText);
+        addMessageToThread(threadId, 'assistant', cachedResponse);
+        
+        try {
+          await addReaction(channel, ts, 'white_check_mark');
+        } catch (e) {
+          console.log('[Reaction] Error adding checkmark (ignoring)');
+        }
+        return;
+      }
+    }
 
     // Build system prompt
     console.log('[Claude] Building system prompt...');
@@ -203,20 +292,42 @@ async function handleEvent(event: any) {
     // Get conversation history if in a thread
     const conversationHistory = getThreadMessages(threadId);
     console.log('[Memory] Retrieved', conversationHistory.length, 'previous messages');
+    if (threadStats) {
+      console.log('[Memory] Thread stats:', threadStats);
+    }
 
     // Send to Claude
     console.log('[Claude] Sending message to Claude API...');
-    const response = await sendMessage(systemPrompt, cleanText, conversationHistory);
-    console.log('[Claude] Received response:', response.substring(0, 100) + '...');
+    const result = await sendMessage(systemPrompt, sanitizedText, conversationHistory);
+    console.log('[Claude] Received response:', result.response.substring(0, 100) + '...');
+    console.log('[Claude] Token usage - Input:', result.inputTokens, 'Output:', result.outputTokens);
+
+    // Track cost
+    const costResult = trackCost(user, result.inputTokens, result.outputTokens);
+    console.log('[Cost] Estimated cost: $', costResult.estimatedCost.toFixed(4));
+    console.log('[Cost] Budget remaining: $', costResult.budgetRemaining.toFixed(2));
+
+    // Warn if budget is low
+    const costWarning = getCostLimitMessage(costResult.budgetRemaining);
+    if (costWarning && costResult.budgetRemaining < 2) {
+      console.log('[Cost]', costWarning);
+      // Optionally append warning to response
+      // result.response += `\n\n_${costWarning}_`;
+    }
 
     // Store in thread memory
-    addMessageToThread(threadId, 'user', cleanText);
-    addMessageToThread(threadId, 'assistant', response);
+    addMessageToThread(threadId, 'user', sanitizedText);
+    addMessageToThread(threadId, 'assistant', result.response);
     console.log('[Memory] Stored in thread memory');
+
+    // Cache response if it's a new conversation
+    if (isNewConversation) {
+      setCachedResponse(sanitizedText, result.response, contextHash);
+    }
 
     // Post response
     console.log('[Slack] Posting response to channel...');
-    await postMessage(channel, response, { thread_ts: threadId });
+    await postMessage(channel, result.response, { thread_ts: threadId });
     console.log('[Slack] Response posted successfully');
 
     // Add checkmark reaction (ignore if already added)
@@ -236,10 +347,30 @@ async function handleEvent(event: any) {
     const { channel, ts, thread_ts } = event;
     const threadId = thread_ts || ts;
     
+    // Determine user-friendly error message
+    let userMessage = 'Sorry, I encountered an unexpected error. Please try again in a moment.';
+    
+    if (error instanceof Error) {
+      // Use the error message if it's already user-friendly (from our utilities)
+      if (error.message.includes('rate limit') || 
+          error.message.includes('budget') ||
+          error.message.includes('AI service') ||
+          error.message.includes('timed out') ||
+          error.message.includes('too complex')) {
+        userMessage = error.message;
+      } else if (error.message.includes('sheets') || error.message.includes('Google')) {
+        userMessage = 'I had trouble fetching portfolio data from our sheets. Please try again in a moment.';
+      } else if (error.message.includes('Slack')) {
+        userMessage = 'I had trouble communicating with Slack. Your request was received but I couldn\'t respond properly.';
+      } else {
+        userMessage = `I encountered an error: ${error.message}. Please try again or contact the team if this persists.`;
+      }
+    }
+    
     try {
       await postMessage(
         channel,
-        `Sorry, I encountered an error processing your request: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `${userMessage}\n\n_If this problem persists, please contact the development team._`,
         { thread_ts: threadId }
       );
       await addReaction(channel, ts, 'x');

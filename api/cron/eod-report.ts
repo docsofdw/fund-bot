@@ -129,10 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       await postMessage(
         config.channels.dailyReportsId,
-        '⚠️ EOD Report Failed',
-        {
-          text: `Failed to generate end-of-day report: ${error instanceof Error ? error.message : 'Unknown error'}`
-        }
+        `⚠️ EOD Report Failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     } catch (slackError) {
       console.error('[EOD Report] Failed to send error notification to Slack:', slackError);

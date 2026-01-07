@@ -1,9 +1,10 @@
-// Thread memory management for conversational context
+// Enhanced thread memory management for conversational context
 
 import { ThreadContext, ThreadMessage } from '../../types';
 
 const MAX_MESSAGES_PER_THREAD = 10;
 const THREAD_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SUMMARY_THRESHOLD = 8; // Create summary after this many messages
 
 // In-memory storage (resets on cold start, which is acceptable)
 const threadMemory = new Map<string, ThreadContext>();
@@ -23,6 +24,44 @@ export function getThreadContext(threadTs: string): ThreadContext | null {
   }
 
   return context;
+}
+
+/**
+ * Create a summary of older messages to preserve context while reducing token usage
+ */
+function createConversationSummary(messages: ThreadMessage[]): string {
+  if (messages.length === 0) {
+    return '';
+  }
+
+  // Extract key topics from user messages
+  const userMessages = messages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content);
+
+  const topics = new Set<string>();
+  
+  // Simple keyword extraction for common fund-related topics
+  const keywords = [
+    'AUM', 'performance', 'position', 'BTC', 'bitcoin', 'holdings',
+    'equity', 'cash', 'exposure', 'portfolio', 'risk', 'concentration',
+    'premium', 'discount', 'mNAV', 'alpha', 'returns',
+  ];
+
+  userMessages.forEach((msg) => {
+    const lowerMsg = msg.toLowerCase();
+    keywords.forEach((keyword) => {
+      if (lowerMsg.includes(keyword.toLowerCase())) {
+        topics.add(keyword);
+      }
+    });
+  });
+
+  if (topics.size === 0) {
+    return `Previous conversation about portfolio and market data (${messages.length} messages)`;
+  }
+
+  return `Previous conversation topics: ${Array.from(topics).join(', ')} (${messages.length} messages)`;
 }
 
 export function addMessageToThread(
@@ -46,9 +85,19 @@ export function addMessageToThread(
     timestamp: Date.now(),
   });
 
-  // Keep only the last N messages
+  // If we have many messages, create a summary and keep recent ones
   if (context.messages.length > MAX_MESSAGES_PER_THREAD) {
-    context.messages = context.messages.slice(-MAX_MESSAGES_PER_THREAD);
+    // Keep the most recent messages
+    const recentMessages = context.messages.slice(-MAX_MESSAGES_PER_THREAD);
+    
+    // Create summary of older messages if we haven't already
+    if (!context.summary && context.messages.length > SUMMARY_THRESHOLD) {
+      const olderMessages = context.messages.slice(0, -MAX_MESSAGES_PER_THREAD);
+      context.summary = createConversationSummary(olderMessages);
+      console.log(`[Memory] Created summary for thread ${threadTs}: ${context.summary}`);
+    }
+    
+    context.messages = recentMessages;
   }
 
   context.lastUpdated = Date.now();
@@ -62,7 +111,54 @@ export function getThreadMessages(threadTs: string): Array<{ role: 'user' | 'ass
     return [];
   }
 
-  return context.messages.map(({ role, content }) => ({ role, content }));
+  const messages = context.messages.map(({ role, content }) => ({ role, content }));
+  
+  // Prepend summary as a system-like context if it exists
+  if (context.summary && messages.length > 0) {
+    // Add summary as the first user message for context
+    messages.unshift({
+      role: 'user',
+      content: `[Context from earlier in conversation: ${context.summary}]`,
+    });
+    messages.unshift({
+      role: 'assistant',
+      content: 'Noted, I\'ll keep that context in mind.',
+    });
+  }
+
+  return messages;
+}
+
+/**
+ * Get thread statistics
+ */
+export function getThreadStats(threadTs: string): {
+  messageCount: number;
+  hasSummary: boolean;
+  ageMinutes: number;
+} | null {
+  const context = getThreadContext(threadTs);
+  
+  if (!context) {
+    return null;
+  }
+
+  const now = Date.now();
+  const ageMinutes = Math.floor((now - (context.messages[0]?.timestamp || now)) / 60000);
+
+  return {
+    messageCount: context.messages.length,
+    hasSummary: !!context.summary,
+    ageMinutes,
+  };
+}
+
+/**
+ * Clear a specific thread
+ */
+export function clearThread(threadTs: string): void {
+  threadMemory.delete(threadTs);
+  console.log(`[Memory] Cleared thread ${threadTs}`);
 }
 
 export function clearExpiredThreads(): void {
@@ -78,7 +174,35 @@ export function clearExpiredThreads(): void {
   threadsToDelete.forEach((threadTs) => threadMemory.delete(threadTs));
 
   if (threadsToDelete.length > 0) {
-    console.log(`Cleared ${threadsToDelete.length} expired thread(s)`);
+    console.log(`[Memory] Cleared ${threadsToDelete.length} expired thread(s)`);
   }
 }
+
+/**
+ * Get memory statistics
+ */
+export function getMemoryStats(): {
+  totalThreads: number;
+  totalMessages: number;
+  threadsWithSummaries: number;
+} {
+  let totalMessages = 0;
+  let threadsWithSummaries = 0;
+
+  for (const context of threadMemory.values()) {
+    totalMessages += context.messages.length;
+    if (context.summary) {
+      threadsWithSummaries++;
+    }
+  }
+
+  return {
+    totalThreads: threadMemory.size,
+    totalMessages,
+    threadsWithSummaries,
+  };
+}
+
+// Auto-cleanup every hour
+setInterval(clearExpiredThreads, 60 * 60 * 1000);
 

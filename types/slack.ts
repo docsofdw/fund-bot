@@ -12,6 +12,7 @@ export interface ThreadContext {
   threadTs: string;
   messages: ThreadMessage[];
   lastUpdated: number;
+  summary?: string;
 }
 
 export interface ThreadMessage {
