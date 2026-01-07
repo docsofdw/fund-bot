@@ -16,6 +16,7 @@ import { formatCurrency, formatNumber, formatPercent } from './lib/utils/formatt
 import { formatDateTimeET } from './lib/utils/dates';
 import { getQuoteOfTheDay, formatQuote } from './lib/utils/daily-quotes';
 import { autoManageQuotes } from './lib/utils/auto-quote-manager';
+import { fetchMarketIndicators, formatMarketIndicators } from './lib/external/market-indicators';
 import {
   createHeaderBlock,
   createSectionBlock,
@@ -35,12 +36,13 @@ async function runMorningReport() {
     console.log('📊 Generating morning report...\n');
 
     // Fetch data
-    const [snapshot, metrics, categories, equityMovers, topEquities] = await Promise.all([
+    const [snapshot, metrics, categories, equityMovers, topEquities, marketIndicators] = await Promise.all([
       getPortfolioSnapshot(),
       getPortfolioMetrics(),
       getCategoryBreakdown(),
       getEquityMovers(5),
       getTopEquityHoldings(5),
+      fetchMarketIndicators(),
     ]);
 
     // Calculate top holdings concentration
@@ -63,7 +65,9 @@ async function runMorningReport() {
       createHeaderBlock(`☀️ Good Morning — Fund Summary`),
       createSectionBlock(`*${dateTimeStr}*`),
       createSectionBlock(
-        `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n` +
+        `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n\n` +
+        `*📊 MARKET INDICATORS*\n` +
+        formatMarketIndicators(marketIndicators) + `\n\n` +
         `_Data from <https://docs.google.com/spreadsheets/d/1R5ZXjN3gDb7CVTrbUdqQU_HDLM2cFVUGS5CNynslAzE/edit?gid=777144457#gid=777144457|210k Portfolio Stats>_`
       ),
       createDividerBlock(),

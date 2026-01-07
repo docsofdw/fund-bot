@@ -7,6 +7,7 @@ import { getPortfolioSnapshot, getPortfolioMetrics, getAllPositions } from '../.
 import { getBTCTCMovers } from '../../lib/sheets/btctc';
 import { formatCurrency, formatNumber, formatPercent, formatPercentChange, formatStockPrice } from '../../lib/utils/formatting';
 import { formatDateET, formatTimeET, isWeekday } from '../../lib/utils/dates';
+import { fetchMarketIndicators, formatMarketIndicators } from '../../lib/external/market-indicators';
 import {
   createHeaderBlock,
   createSectionBlock,
@@ -32,11 +33,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const startTime = Date.now();
     console.log('[EOD Report] Starting data fetch...');
     
-    const [snapshot, metrics, positions, btctcMovers] = await Promise.all([
+    const [snapshot, metrics, positions, btctcMovers, marketIndicators] = await Promise.all([
       getPortfolioSnapshot(),
       getPortfolioMetrics(),
       getAllPositions(),
       getBTCTCMovers(3),
+      fetchMarketIndicators(),
     ]);
 
     const fetchDuration = Date.now() - startTime;
@@ -69,7 +71,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       createHeaderBlock(`🌙 End of Day — Fund Summary`),
       createSectionBlock(`*${dateStr}* • ${timeStr} CT`),
       createSectionBlock(
-        `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n` +
+        `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n\n` +
+        `*📊 MARKET INDICATORS*\n` +
+        formatMarketIndicators(marketIndicators) + `\n\n` +
         `_Data from <https://docs.google.com/spreadsheets/d/1R5ZXjN3gDb7CVTrbUdqQU_HDLM2cFVUGS5CNynslAzE/edit?gid=777144457#gid=777144457|210k Portfolio Stats>_`
       ),
       createDividerBlock(),

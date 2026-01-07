@@ -14,6 +14,7 @@ import { getPortfolioSnapshot, getPortfolioMetrics } from './lib/sheets/portfoli
 import { getBTCTCMovers } from './lib/sheets/btctc';
 import { formatCurrency, formatNumber, formatPercent, formatPercentChange, formatStockPrice } from './lib/utils/formatting';
 import { formatDateTimeET } from './lib/utils/dates';
+import { fetchMarketIndicators, formatMarketIndicators } from './lib/external/market-indicators';
 import {
   createHeaderBlock,
   createSectionBlock,
@@ -25,10 +26,11 @@ async function runEODReport() {
     console.log('📊 Generating end-of-day report...\n');
 
     // Fetch data
-    const [snapshot, metrics, btctcMovers] = await Promise.all([
+    const [snapshot, metrics, btctcMovers, marketIndicators] = await Promise.all([
       getPortfolioSnapshot(),
       getPortfolioMetrics(),
       getBTCTCMovers(3),
+      fetchMarketIndicators(),
     ]);
 
     // Build message
@@ -39,7 +41,9 @@ async function runEODReport() {
       createHeaderBlock(`🌙 End of Day — Fund Summary`),
       createSectionBlock(`*${dateTimeStr}*`),
       createSectionBlock(
-        `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n` +
+        `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n\n` +
+        `*📊 MARKET INDICATORS*\n` +
+        formatMarketIndicators(marketIndicators) + `\n\n` +
         `_Data from <https://docs.google.com/spreadsheets/d/1R5ZXjN3gDb7CVTrbUdqQU_HDLM2cFVUGS5CNynslAzE/edit?gid=777144457#gid=777144457|210k Portfolio Stats>_`
       ),
       createDividerBlock(),

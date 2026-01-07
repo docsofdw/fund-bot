@@ -6,6 +6,7 @@ A Claude-powered Slack bot that provides conversational access to fund data from
 
 - **Conversational Queries**: Ask natural language questions about portfolio positions, performance, and market context
 - **Daily Reports**: Automated morning (9 AM ET) and end-of-day (4:30 PM ET) reports
+- **Market Indicators**: Real-time Fear & Greed, Funding Rate, ETF Flows, MVRV, and DVOL in morning reports
 - **Thread Memory**: Maintains context within conversation threads for follow-up questions
 - **Real-time Data**: Fetches live data from Google Sheets on every query
 - **BTCTC Market Data**: Tracks Bitcoin treasury company performance
@@ -264,6 +265,28 @@ See the [Project Specification](./SPEC.md) for detailed cell references and data
 - Environment variables stored securely in Vercel
 - Cron endpoints protected with secret token
 
+## 📊 Market Indicators (Free!)
+
+Morning reports include 2 real-time market indicators:
+
+- **Fear & Greed Index** (FREE - Alternative.me)
+- **DVOL** (FREE - Deribit Volatility Index)
+
+No API keys or configuration required!
+
+### Quick Test
+
+```bash
+# Test indicators
+npm run test:indicators
+
+# Run morning report
+npm run morning-report
+```
+
+📖 **Full Guide**: See [MARKET_INDICATORS_SETUP.md](./MARKET_INDICATORS_SETUP.md)  
+📋 **Quick Ref**: See [MARKET_INDICATORS_QUICK_REF.md](./MARKET_INDICATORS_QUICK_REF.md)
+
 ## 💰 Cost Estimates
 
 Monthly costs at ~100 queries/day:
@@ -272,6 +295,7 @@ Monthly costs at ~100 queries/day:
 - Vercel Pro: $20/mo (for cron jobs)
 - Google Sheets API: Free
 - Slack: Free
+- **Market Indicators: Free** (Fear & Greed + DVOL)
 
 **Total: ~$50-70/month**
 

@@ -9,6 +9,7 @@ import { formatCurrency, formatNumber, formatPercent } from '../../lib/utils/for
 import { formatDateET, formatTimeET, isWeekday } from '../../lib/utils/dates';
 import { getQuoteOfTheDay, formatQuote } from '../../lib/utils/daily-quotes';
 import { autoManageQuotes } from '../../lib/utils/auto-quote-manager';
+import { fetchMarketIndicators, formatMarketIndicators } from '../../lib/external/market-indicators';
 import {
   createHeaderBlock,
   createSectionBlock,
@@ -41,12 +42,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const startTime = Date.now();
     console.log('[Morning Report] Starting data fetch...');
     
-    const [snapshot, metrics, categories, equityMovers, topEquities] = await Promise.all([
+    const [snapshot, metrics, categories, equityMovers, topEquities, marketIndicators] = await Promise.all([
       getPortfolioSnapshot(),
       getPortfolioMetrics(),
       getCategoryBreakdown(),
       getEquityMovers(5),
       getTopEquityHoldings(5),
+      fetchMarketIndicators(),
     ]);
 
     const fetchDuration = Date.now() - startTime;
@@ -73,7 +75,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       createHeaderBlock(`☀️ Good Morning — Fund Summary`),
       createSectionBlock(`*${dateStr}* • ${timeStr} CT`),
       createSectionBlock(
-        `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n` +
+        `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n\n` +
+        `*📊 MARKET INDICATORS*\n` +
+        formatMarketIndicators(marketIndicators) + `\n\n` +
         `_Data from <https://docs.google.com/spreadsheets/d/1R5ZXjN3gDb7CVTrbUdqQU_HDLM2cFVUGS5CNynslAzE/edit?gid=777144457#gid=777144457|210k Portfolio Stats>_`
       ),
       createDividerBlock(),
