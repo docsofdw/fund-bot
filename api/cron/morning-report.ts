@@ -7,6 +7,8 @@ import { getPortfolioSnapshot, getPortfolioMetrics, getCategoryBreakdown } from 
 import { getEquityMovers, getTopEquityHoldings } from '../../lib/sheets/equities';
 import { formatCurrency, formatNumber, formatPercent } from '../../lib/utils/formatting';
 import { formatDateET, formatTimeET, isWeekday } from '../../lib/utils/dates';
+import { getQuoteOfTheDay, formatQuote } from '../../lib/utils/daily-quotes';
+import { autoManageQuotes } from '../../lib/utils/auto-quote-manager';
 import {
   createHeaderBlock,
   createSectionBlock,
@@ -25,6 +27,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!isWeekday()) {
       console.log('Skipping morning report - not a weekday');
       return res.status(200).json({ message: 'Skipped - weekend' });
+    }
+
+    // Auto-manage quote inventory (non-blocking - won't fail report if it fails)
+    try {
+      console.log('[Morning Report] Checking quote inventory...');
+      await autoManageQuotes({ minThreshold: 80, targetQuotes: 100, batchSize: 50 });
+    } catch (quoteError) {
+      console.warn('[Morning Report] Quote auto-generation failed (non-fatal):', quoteError);
     }
 
     // Fetch data with timeout tracking
@@ -139,7 +149,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       createDividerBlock(),
       
-      createSectionBlock(`Have a great trading day! ☕`),
+      createSectionBlock(formatQuote(getQuoteOfTheDay())),
     ];
 
     // Post to Slack

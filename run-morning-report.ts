@@ -14,6 +14,8 @@ import { getPortfolioSnapshot, getPortfolioMetrics, getCategoryBreakdown } from 
 import { getEquityMovers, getTopEquityHoldings } from './lib/sheets/equities';
 import { formatCurrency, formatNumber, formatPercent } from './lib/utils/formatting';
 import { formatDateTimeET } from './lib/utils/dates';
+import { getQuoteOfTheDay, formatQuote } from './lib/utils/daily-quotes';
+import { autoManageQuotes } from './lib/utils/auto-quote-manager';
 import {
   createHeaderBlock,
   createSectionBlock,
@@ -22,6 +24,14 @@ import {
 
 async function runMorningReport() {
   try {
+    // Auto-manage quote inventory before generating report
+    console.log('📜 Checking quote inventory...\n');
+    await autoManageQuotes({
+      minThreshold: 80,  // Generate more when below 80 total quotes
+      targetQuotes: 100, // Try to maintain 100 generated quotes
+      batchSize: 50      // Generate 50 at a time
+    });
+    
     console.log('📊 Generating morning report...\n');
 
     // Fetch data
@@ -129,7 +139,7 @@ async function runMorningReport() {
       
       createDividerBlock(),
       
-      createSectionBlock(`Have a great trading day! ☕`),
+      createSectionBlock(formatQuote(getQuoteOfTheDay())),
     ];
 
     // Post to Slack
