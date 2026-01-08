@@ -15,16 +15,21 @@ export async function getPortfolioSnapshot(): Promise<PortfolioSnapshot> {
   const sheetId = config.sheets.portfolioSheetId;
   const data = await getSheetData(sheetId, SHEET_CONFIG.ranges.livePortfolio);
 
-  return {
-    liveAUM: parseNumber(data[0]?.[1]),
-    mtmAUM: parseNumber(data[1]?.[1]),
-    btcPrice: parseNumber(data[2]?.[1]),
-    bitcoinAUM: parseNumber(data[3]?.[1]),
-    navAUM: parseNumber(data[0]?.[4]),
-    fundMTD: parsePercent(data[0]?.[5]),  // Row 1, Col F
-    btcMTD: parsePercent(data[2]?.[5]),   // Row 3, Col F
+  const snapshot = {
+    liveAUM: parseNumber(data[0]?.[1], 'liveAUM'),
+    mtmAUM: parseNumber(data[1]?.[1], 'mtmAUM'),
+    btcPrice: parseNumber(data[2]?.[1], 'btcPrice'),
+    bitcoinAUM: parseNumber(data[3]?.[1], 'bitcoinAUM'),
+    navAUM: parseNumber(data[0]?.[4], 'navAUM'),
+    fundMTD: parsePercent(data[0]?.[5], 'fundMTD'),  // Row 1, Col F
+    btcMTD: parsePercent(data[2]?.[5], 'btcMTD'),   // Row 3, Col F
     timestamp: new Date(),
   };
+
+  // Log summary of critical values for debugging
+  console.log(`[Portfolio] Snapshot fetched: liveAUM=${snapshot.liveAUM}, btcPrice=${snapshot.btcPrice}, fundMTD=${(snapshot.fundMTD * 100).toFixed(2)}%`);
+
+  return snapshot;
 }
 
 export async function getPortfolioMetrics(): Promise<PortfolioMetrics> {
@@ -32,15 +37,19 @@ export async function getPortfolioMetrics(): Promise<PortfolioMetrics> {
   const data = await getSheetData(sheetId, SHEET_CONFIG.ranges.portfolioMetrics);
 
   // Metrics start at row 78, so we need row 1 of the returned range (0-indexed)
-  return {
-    totalAUMUSD: parseNumber(data[1]?.[1]),
-    totalAUMBTC: parseNumber(data[2]?.[1]),
-    bitcoinDelta: parseNumber(data[3]?.[1]),
-    percentLong: parsePercent(data[4]?.[1]),
-    netCash: parseNumber(data[5]?.[1]),
-    totalBorrowPercent: parsePercent(data[6]?.[1]),
-    extraBTCExposure: parseNumber(data[7]?.[1]),
+  const metrics = {
+    totalAUMUSD: parseNumber(data[1]?.[1], 'totalAUMUSD'),
+    totalAUMBTC: parseNumber(data[2]?.[1], 'totalAUMBTC'),
+    bitcoinDelta: parseNumber(data[3]?.[1], 'bitcoinDelta'),
+    percentLong: parsePercent(data[4]?.[1], 'percentLong'),
+    netCash: parseNumber(data[5]?.[1], 'netCash'),
+    totalBorrowPercent: parsePercent(data[6]?.[1], 'totalBorrowPercent'),
+    extraBTCExposure: parseNumber(data[7]?.[1], 'extraBTCExposure'),
   };
+
+  console.log(`[Portfolio] Metrics fetched: bitcoinDelta=${metrics.bitcoinDelta}, percentLong=${(metrics.percentLong * 100).toFixed(2)}%`);
+
+  return metrics;
 }
 
 export async function getAllPositions(): Promise<Position[]> {

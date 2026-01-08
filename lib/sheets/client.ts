@@ -22,11 +22,41 @@ export function getSheetsClient(): sheets_v4.Sheets {
   return sheetsClient;
 }
 
-// Helper to check if data contains "Loading..." values
+// Problematic values that indicate data isn't ready
+const PROBLEMATIC_VALUES = [
+  'Loading...',
+  '#N/A',
+  '#REF!',
+  '#ERROR!',
+  '#VALUE!',
+  '#NAME?',
+  '#DIV/0!',
+];
+
+// Helper to check if a cell value is problematic
+function isProblematicValue(cell: any): boolean {
+  if (typeof cell !== 'string') return false;
+  return PROBLEMATIC_VALUES.some(pv => cell.includes(pv));
+}
+
+// Helper to check if data contains problematic values
 function hasLoadingValues(data: string[][]): boolean {
-  return data.some(row => row.some(cell => 
-    typeof cell === 'string' && cell.includes('Loading...')
-  ));
+  return data.some(row => row.some(cell => isProblematicValue(cell)));
+}
+
+// Helper to find and log problematic cells for debugging
+function logProblematicCells(data: string[][], range: string): void {
+  const issues: string[] = [];
+  data.forEach((row, rowIdx) => {
+    row.forEach((cell, colIdx) => {
+      if (isProblematicValue(cell)) {
+        issues.push(`[${rowIdx},${colIdx}]="${cell}"`);
+      }
+    });
+  });
+  if (issues.length > 0) {
+    console.warn(`[Sheets] Problematic cells in ${range}: ${issues.slice(0, 10).join(', ')}${issues.length > 10 ? ` (+${issues.length - 10} more)` : ''}`);
+  }
 }
 
 // Helper to wait/sleep
@@ -51,14 +81,16 @@ export async function getSheetData(
 
       const data = response.data.values || [];
 
-      // Check if data contains "Loading..." values
+      // Check if data contains problematic values (Loading..., #N/A, etc.)
       if (hasLoadingValues(data)) {
+        logProblematicCells(data, range);
         if (attempt < maxRetries) {
-          console.log(`Sheet data contains "Loading..." values. Retrying in ${retryDelay}ms (attempt ${attempt}/${maxRetries})...`);
+          console.log(`[Sheets] Data contains problematic values. Retrying in ${retryDelay}ms (attempt ${attempt}/${maxRetries})...`);
           await sleep(retryDelay);
           continue;
         } else {
-          console.warn(`Sheet data still contains "Loading..." after ${maxRetries} attempts. Proceeding with available data.`);
+          console.warn(`[Sheets] Data still contains problematic values after ${maxRetries} attempts. Proceeding with available data.`);
+          logProblematicCells(data, range);
         }
       }
 
@@ -104,18 +136,50 @@ export async function getBatchSheetData(
 }
 
 // Helper to parse numeric values from sheets
-export function parseNumber(value: string | undefined): number {
-  if (!value) return 0;
+export function parseNumber(value: string | undefined, fieldName?: string): number {
+  if (!value) {
+    if (fieldName) console.warn(`[Sheets] Empty value for field: ${fieldName}`);
+    return 0;
+  }
+
+  // Check for problematic values
+  if (isProblematicValue(value)) {
+    console.warn(`[Sheets] Problematic value "${value}" for field: ${fieldName || 'unknown'}`);
+    return 0;
+  }
+
   const cleaned = value.replace(/[$,\s%]/g, '');
   const parsed = parseFloat(cleaned);
-  return isNaN(parsed) ? 0 : parsed;
+
+  if (isNaN(parsed)) {
+    if (fieldName) console.warn(`[Sheets] NaN parsed for field "${fieldName}": "${value}"`);
+    return 0;
+  }
+
+  return parsed;
 }
 
 // Helper to parse percentage values
-export function parsePercent(value: string | undefined): number {
-  if (!value) return 0;
+export function parsePercent(value: string | undefined, fieldName?: string): number {
+  if (!value) {
+    if (fieldName) console.warn(`[Sheets] Empty value for field: ${fieldName}`);
+    return 0;
+  }
+
+  // Check for problematic values
+  if (isProblematicValue(value)) {
+    console.warn(`[Sheets] Problematic value "${value}" for field: ${fieldName || 'unknown'}`);
+    return 0;
+  }
+
   const cleaned = value.replace(/[%\s]/g, '');
   const parsed = parseFloat(cleaned);
-  return isNaN(parsed) ? 0 : parsed / 100;
+
+  if (isNaN(parsed)) {
+    if (fieldName) console.warn(`[Sheets] NaN parsed for field "${fieldName}": "${value}"`);
+    return 0;
+  }
+
+  return parsed / 100;
 }
 

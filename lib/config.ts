@@ -20,6 +20,7 @@ interface Config {
   channels: {
     dailyReportsId: string;
     askFundBotId: string;
+    testDailyReportsId?: string;
   };
   env: 'development' | 'production';
 }
@@ -66,6 +67,7 @@ function validateEnv(): Config {
     channels: {
       dailyReportsId: process.env.DAILY_REPORTS_CHANNEL_ID!,
       askFundBotId: process.env.ASK_FUNDBOT_CHANNEL_ID!,
+      testDailyReportsId: process.env.TEST_DAILY_REPORTS_CHANNEL_ID,
     },
     env: (process.env.NODE_ENV as 'development' | 'production') || 'development',
   };

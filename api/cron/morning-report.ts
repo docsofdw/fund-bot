@@ -10,11 +10,23 @@ import { formatDateET, formatTimeET, isWeekday } from '../../lib/utils/dates';
 import { getQuoteOfTheDay, formatQuote } from '../../lib/utils/daily-quotes';
 import { autoManageQuotes } from '../../lib/utils/auto-quote-manager';
 import { fetchMarketIndicators, formatMarketIndicators } from '../../lib/external/market-indicators';
+import { generateDataQualityReport, shouldRetryDataFetch } from '../../lib/utils/data-validation';
 import {
   createHeaderBlock,
   createSectionBlock,
   createDividerBlock,
 } from '../../lib/slack/blocks';
+
+// Configuration for data fetch retry
+const DATA_FETCH_CONFIG = {
+  maxRetries: 3,
+  retryDelayMs: 5000, // 5 seconds between retries
+};
+
+// Helper to wait
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Verify this is a cron request (Vercel sets this header)
@@ -38,21 +50,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.warn('[Morning Report] Quote auto-generation failed (non-fatal):', quoteError);
     }
 
-    // Fetch data with timeout tracking
+    // Fetch data with timeout tracking and retry logic for zero values
     const startTime = Date.now();
     console.log('[Morning Report] Starting data fetch...');
-    
-    const [snapshot, metrics, categories, equityMovers, topEquities, marketIndicators] = await Promise.all([
-      getPortfolioSnapshot(),
-      getPortfolioMetrics(),
-      getCategoryBreakdown(),
-      getEquityMovers(5),
-      getTopEquityHoldings(5),
-      fetchMarketIndicators(),
-    ]);
+
+    // Helper function to fetch all data in parallel
+    async function fetchAllData() {
+      const [snapshot, metrics, categories, equityMovers, topEquities, marketIndicators] = await Promise.all([
+        getPortfolioSnapshot(),
+        getPortfolioMetrics(),
+        getCategoryBreakdown(),
+        getEquityMovers(5),
+        getTopEquityHoldings(5),
+        fetchMarketIndicators(),
+      ]);
+      return { snapshot, metrics, categories, equityMovers, topEquities, marketIndicators };
+    }
+
+    let data = await fetchAllData();
+    let dataQualityReport = generateDataQualityReport(data.snapshot, data.metrics, data.marketIndicators);
+    let attempt = 1;
+
+    // Retry loop for data fetch - handles cases where sheet data returns zeros
+    while (!dataQualityReport.overallValid && attempt < DATA_FETCH_CONFIG.maxRetries) {
+      if (shouldRetryDataFetch(dataQualityReport)) {
+        console.warn(`[Morning Report] Data validation failed on attempt ${attempt}, retrying in ${DATA_FETCH_CONFIG.retryDelayMs}ms...`);
+        console.warn(`[Morning Report] Errors: ${dataQualityReport.criticalErrors.join(', ')}`);
+        await sleep(DATA_FETCH_CONFIG.retryDelayMs);
+
+        attempt++;
+        console.log(`[Morning Report] Data fetch attempt ${attempt}/${DATA_FETCH_CONFIG.maxRetries}...`);
+        data = await fetchAllData();
+        dataQualityReport = generateDataQualityReport(data.snapshot, data.metrics, data.marketIndicators);
+      } else {
+        console.warn(`[Morning Report] Data validation failed but retry won't help - proceeding`);
+        break;
+      }
+    }
+
+    if (dataQualityReport.overallValid) {
+      console.log(`[Morning Report] Data validation passed on attempt ${attempt}`);
+    } else {
+      console.warn(`[Morning Report] Data validation failed after ${attempt} attempts`);
+    }
 
     const fetchDuration = Date.now() - startTime;
-    console.log(`[Morning Report] Data fetch completed in ${fetchDuration}ms`);
+    console.log(`[Morning Report] Data fetch completed in ${fetchDuration}ms (${attempt} attempt(s))`);
+
+    // Extract data for easier access
+    const { snapshot, metrics, categories, equityMovers, topEquities, marketIndicators } = data;
+
+    // If data is still invalid after retries, send an alert but continue with best effort
+    if (!dataQualityReport.overallValid) {
+      console.error('[Morning Report] Proceeding with invalid data - errors:', dataQualityReport.criticalErrors);
+
+      // Send a warning to Slack about data quality issues
+      try {
+        await postMessage(
+          config.channels.dailyReportsId,
+          `⚠️ *Morning Report Data Quality Warning*\n` +
+          `The following issues were detected:\n` +
+          dataQualityReport.criticalErrors.map(e => `• ${e}`).join('\n') +
+          `\n\n_Report will proceed with available data. Please check the Google Sheet._`
+        );
+      } catch (alertError) {
+        console.error('[Morning Report] Failed to send data quality alert:', alertError);
+      }
+    }
 
     // Calculate top holdings concentration (with safety checks)
     const topHoldingsTotal = topEquities.reduce((sum, p) => sum + p.value, 0);
