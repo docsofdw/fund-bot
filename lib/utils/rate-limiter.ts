@@ -84,7 +84,38 @@ export function checkRateLimit(userId: string): {
 }
 
 /**
- * Track cost for a user
+ * Check if a user is within their daily budget (call BEFORE processing request)
+ */
+export function checkBudget(userId: string): {
+  allowed: boolean;
+  budgetRemaining: number;
+  resetTime: number;
+} {
+  const now = Date.now();
+  const key = `cost:${userId}`;
+  const entry = costTracking.get(key);
+
+  // No entry means fresh budget
+  if (!entry || now >= entry.resetTime) {
+    return {
+      allowed: true,
+      budgetRemaining: COST_CONFIG.dailyBudgetPerUser,
+      resetTime: now + COST_CONFIG.costWindowMs,
+    };
+  }
+
+  const budgetRemaining = Math.max(0, COST_CONFIG.dailyBudgetPerUser - entry.estimatedCost);
+  const allowed = budgetRemaining > 0;
+
+  return {
+    allowed,
+    budgetRemaining,
+    resetTime: entry.resetTime,
+  };
+}
+
+/**
+ * Track cost for a user (call AFTER processing request)
  */
 export function trackCost(userId: string, inputTokens: number, outputTokens: number): {
   withinBudget: boolean;

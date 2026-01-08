@@ -8,21 +8,23 @@ import { postMessage, addReaction } from '../../lib/slack/client';
 import { getPortfolioSnapshot, getPortfolioMetrics, getTopPositions } from '../../lib/sheets/portfolio';
 import { sendMessage } from '../../lib/claude/client';
 import { buildSystemPrompt } from '../../lib/claude/prompts';
-import { addMessageToThread, getThreadMessages, getThreadStats } from '../../lib/claude/memory';
-import { 
-  validateAndSanitizeInput, 
-  cleanMessageText, 
-  isHelpRequest, 
+import { addMessageToThread, getThreadMessages, getThreadMessagesWithFallback, getThreadStats } from '../../lib/claude/memory';
+import {
+  validateAndSanitizeInput,
+  cleanMessageText,
+  isHelpRequest,
   getHelpMessage,
   getRateLimitMessage,
   getCostLimitMessage,
+  getBudgetExceededMessage,
 } from '../../lib/utils/input-validation';
-import { checkRateLimit, trackCost } from '../../lib/utils/rate-limiter';
-import { 
-  getCachedResponse, 
-  setCachedResponse, 
+import { checkRateLimit, checkBudget, trackCost } from '../../lib/utils/rate-limiter';
+import {
+  getCachedResponse,
+  setCachedResponse,
   hashContext,
 } from '../../lib/utils/response-cache';
+import { withTimeout, withTimeoutAll, TIMEOUTS } from '../../lib/utils/timeout';
 
 // Event deduplication - track processed events
 const processedEvents = new Set<string>();
@@ -243,13 +245,32 @@ async function handleEvent(event: any) {
       console.log('[RateLimit]', rateLimit.warning);
     }
 
-    // Fetch portfolio data
+    // Check daily budget limit (enforced - hard block)
+    console.log('[Budget] Checking daily budget for user:', user);
+    const budgetCheck = checkBudget(user);
+    if (!budgetCheck.allowed) {
+      console.log('[Budget] User exceeded daily budget');
+      const message = getBudgetExceededMessage(budgetCheck.resetTime);
+      await postMessage(channel, message, { thread_ts: threadId });
+      try {
+        await addReaction(channel, ts, 'moneybag');
+      } catch (e) {
+        console.log('[Reaction] Error adding moneybag (ignoring)');
+      }
+      return;
+    }
+
+    // Fetch portfolio data (with timeout)
     console.log('[Sheets] Fetching portfolio data...');
-    const [snapshot, metrics, topPositions] = await Promise.all([
-      getPortfolioSnapshot(),
-      getPortfolioMetrics(),
-      getTopPositions(15), // Get top 15 positions
-    ]);
+    const [snapshot, metrics, topPositions] = await withTimeoutAll(
+      [
+        getPortfolioSnapshot(),
+        getPortfolioMetrics(),
+        getTopPositions(15), // Get top 15 positions
+      ],
+      TIMEOUTS.sheets,
+      'Portfolio data fetch'
+    );
     console.log('[Sheets] Portfolio data fetched successfully');
     console.log('[Sheets] Fetched', topPositions.length, 'positions');
 
@@ -289,16 +310,20 @@ async function handleEvent(event: any) {
     });
     console.log('[Claude] System prompt built');
 
-    // Get conversation history if in a thread
-    const conversationHistory = getThreadMessages(threadId);
+    // Get conversation history if in a thread (with Slack fallback for cold starts)
+    const conversationHistory = await getThreadMessagesWithFallback(threadId, channel);
     console.log('[Memory] Retrieved', conversationHistory.length, 'previous messages');
     if (threadStats) {
       console.log('[Memory] Thread stats:', threadStats);
     }
 
-    // Send to Claude
+    // Send to Claude (with timeout)
     console.log('[Claude] Sending message to Claude API...');
-    const result = await sendMessage(systemPrompt, sanitizedText, conversationHistory);
+    const result = await withTimeout(
+      sendMessage(systemPrompt, sanitizedText, conversationHistory),
+      TIMEOUTS.claude,
+      'Claude API call'
+    );
     console.log('[Claude] Received response:', result.response.substring(0, 100) + '...');
     console.log('[Claude] Token usage - Input:', result.inputTokens, 'Output:', result.outputTokens);
 
@@ -340,42 +365,81 @@ async function handleEvent(event: any) {
     
     console.log('[Event] Processing complete!');
   } catch (error) {
-    console.error('[Error] Error processing message:', error);
-    console.error('[Error] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
-    console.error('[Error] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
-    
-    const { channel, ts, thread_ts } = event;
+    const errorId = `ERR-${Date.now().toString(36).toUpperCase()}`;
+    console.error(`[Error ${errorId}] Error processing message:`, error);
+    console.error(`[Error ${errorId}] Stack trace:`, error instanceof Error ? error.stack : 'No stack trace');
+
+    const { channel, ts, thread_ts, user: errorUser } = event;
     const threadId = thread_ts || ts;
-    
-    // Determine user-friendly error message
+
+    // Determine user-friendly error message based on error type
     let userMessage = 'Sorry, I encountered an unexpected error. Please try again in a moment.';
-    
+    let errorType = 'unknown';
+
     if (error instanceof Error) {
-      // Use the error message if it's already user-friendly (from our utilities)
-      if (error.message.includes('rate limit') || 
-          error.message.includes('budget') ||
-          error.message.includes('AI service') ||
-          error.message.includes('timed out') ||
-          error.message.includes('too complex')) {
+      const msg = error.message.toLowerCase();
+
+      // Timeout errors
+      if (msg.includes('timed out')) {
+        errorType = 'timeout';
+        if (msg.includes('portfolio') || msg.includes('sheets')) {
+          userMessage = '⏱️ The portfolio data took too long to load. Our Google Sheets might be slow. Please try again in a moment.';
+        } else if (msg.includes('claude')) {
+          userMessage = '⏱️ The AI response took too long. Please try a shorter or simpler question.';
+        } else {
+          userMessage = '⏱️ The request timed out. Please try again in a moment.';
+        }
+      }
+      // Rate limit / budget errors
+      else if (msg.includes('rate limit') || msg.includes('budget')) {
+        errorType = 'rate_limit';
         userMessage = error.message;
-      } else if (error.message.includes('sheets') || error.message.includes('Google')) {
-        userMessage = 'I had trouble fetching portfolio data from our sheets. Please try again in a moment.';
-      } else if (error.message.includes('Slack')) {
-        userMessage = 'I had trouble communicating with Slack. Your request was received but I couldn\'t respond properly.';
-      } else {
-        userMessage = `I encountered an error: ${error.message}. Please try again or contact the team if this persists.`;
+      }
+      // AI service errors
+      else if (msg.includes('ai service') || msg.includes('anthropic') || msg.includes('claude')) {
+        errorType = 'ai_service';
+        userMessage = '🤖 The AI service is temporarily unavailable. Please try again in a few minutes.';
+      }
+      // Google Sheets errors
+      else if (msg.includes('sheets') || msg.includes('google') || msg.includes('spreadsheet')) {
+        errorType = 'sheets';
+        userMessage = '📊 I had trouble fetching portfolio data. The Google Sheets service may be slow or unavailable. Please try again in a moment.';
+      }
+      // Slack errors
+      else if (msg.includes('slack')) {
+        errorType = 'slack';
+        userMessage = '💬 I had trouble communicating with Slack. Your request was received but I couldn\'t respond properly.';
+      }
+      // Network errors
+      else if (msg.includes('network') || msg.includes('fetch') || msg.includes('econnrefused')) {
+        errorType = 'network';
+        userMessage = '🌐 A network error occurred. Please check your connection and try again.';
+      }
+      // All other errors
+      else {
+        errorType = 'other';
+        userMessage = 'Sorry, something went wrong. Please try again in a moment.';
       }
     }
-    
+
+    // Log structured error info for monitoring
+    console.error(`[Error ${errorId}] Summary:`, {
+      errorId,
+      errorType,
+      user: errorUser,
+      channel,
+      message: error instanceof Error ? error.message : String(error),
+    });
+
     try {
       await postMessage(
         channel,
-        `${userMessage}\n\n_If this problem persists, please contact the development team._`,
+        `${userMessage}\n\n_Error ID: ${errorId} • If this persists, please contact the team._`,
         { thread_ts: threadId }
       );
       await addReaction(channel, ts, 'x');
     } catch (e) {
-      console.error('[Error] Failed to post error message:', e);
+      console.error(`[Error ${errorId}] Failed to post error message:`, e);
     }
   }
   } catch (outerError) {

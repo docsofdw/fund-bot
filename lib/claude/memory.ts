@@ -1,6 +1,8 @@
 // Enhanced thread memory management for conversational context
+// Uses in-memory cache with Slack thread history fallback for persistence
 
 import { ThreadContext, ThreadMessage } from '../../types';
+import { getThreadHistory } from '../slack/client';
 
 const MAX_MESSAGES_PER_THREAD = 10;
 const THREAD_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -106,13 +108,13 @@ export function addMessageToThread(
 
 export function getThreadMessages(threadTs: string): Array<{ role: 'user' | 'assistant'; content: string }> {
   const context = getThreadContext(threadTs);
-  
+
   if (!context) {
     return [];
   }
 
   const messages = context.messages.map(({ role, content }) => ({ role, content }));
-  
+
   // Prepend summary as a system-like context if it exists
   if (context.summary && messages.length > 0) {
     // Add summary as the first user message for context
@@ -127,6 +129,46 @@ export function getThreadMessages(threadTs: string): Array<{ role: 'user' | 'ass
   }
 
   return messages;
+}
+
+/**
+ * Get thread messages with Slack fallback for cold start recovery
+ * This provides persistent conversation history across serverless invocations
+ */
+export async function getThreadMessagesWithFallback(
+  threadTs: string,
+  channel: string
+): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  // First, try in-memory cache
+  const cachedMessages = getThreadMessages(threadTs);
+
+  if (cachedMessages.length > 0) {
+    console.log(`[Memory] Using ${cachedMessages.length} cached messages`);
+    return cachedMessages;
+  }
+
+  // If cache is empty, try to recover from Slack thread history
+  console.log('[Memory] Cache empty, fetching from Slack thread history...');
+
+  try {
+    const slackHistory = await getThreadHistory(channel, threadTs, MAX_MESSAGES_PER_THREAD);
+
+    if (slackHistory.length > 0) {
+      console.log(`[Memory] Recovered ${slackHistory.length} messages from Slack`);
+
+      // Rebuild the in-memory cache from Slack history
+      for (const msg of slackHistory) {
+        addMessageToThread(threadTs, msg.role, msg.content);
+      }
+
+      // Return the recovered messages
+      return slackHistory.map(({ role, content }) => ({ role, content }));
+    }
+  } catch (error) {
+    console.warn('[Memory] Failed to fetch Slack history:', error);
+  }
+
+  return [];
 }
 
 /**
@@ -205,4 +247,3 @@ export function getMemoryStats(): {
 
 // Auto-cleanup every hour
 setInterval(clearExpiredThreads, 60 * 60 * 1000);
-

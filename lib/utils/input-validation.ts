@@ -209,11 +209,26 @@ export function getCostLimitMessage(budgetRemaining: number): string {
   if (budgetRemaining <= 0) {
     return "💰 Daily budget limit reached. Your requests will resume tomorrow. This helps control costs.";
   }
-  
+
   if (budgetRemaining < 1) {
     return `💰 You're approaching your daily budget limit ($${budgetRemaining.toFixed(2)} remaining).`;
   }
-  
+
   return '';
+}
+
+/**
+ * Budget exceeded message (hard block)
+ */
+export function getBudgetExceededMessage(resetTime: number): string {
+  const resetDate = new Date(resetTime);
+  const hoursUntilReset = Math.ceil((resetTime - Date.now()) / (60 * 60 * 1000));
+
+  if (hoursUntilReset <= 1) {
+    const minutesUntilReset = Math.ceil((resetTime - Date.now()) / 60000);
+    return `💰 You've reached your daily budget limit. Your access will be restored in ${minutesUntilReset} minute${minutesUntilReset === 1 ? '' : 's'}.\n\n_This limit helps control API costs. Thanks for understanding!_`;
+  }
+
+  return `💰 You've reached your daily budget limit. Your access will be restored in about ${hoursUntilReset} hour${hoursUntilReset === 1 ? '' : 's'}.\n\n_This limit helps control API costs. Thanks for understanding!_`;
 }
 
