@@ -4,15 +4,15 @@ import { format, formatInTimeZone } from 'date-fns-tz';
 
 const CT_TIMEZONE = 'America/Chicago';
 
-export function formatDateET(date: Date, formatStr: string = 'EEEE, MMMM d, yyyy'): string {
+export function formatDateCT(date: Date, formatStr: string = 'EEEE, MMMM d, yyyy'): string {
   return formatInTimeZone(date, CT_TIMEZONE, formatStr);
 }
 
-export function formatTimeET(date: Date, formatStr: string = 'h:mm a'): string {
+export function formatTimeCT(date: Date, formatStr: string = 'h:mm a'): string {
   return formatInTimeZone(date, CT_TIMEZONE, formatStr);
 }
 
-export function formatDateTimeET(date: Date, formatStr: string = 'EEEE, MMMM d, yyyy h:mm a'): string {
+export function formatDateTimeCT(date: Date, formatStr: string = 'EEEE, MMMM d, yyyy h:mm a'): string {
   return formatInTimeZone(date, CT_TIMEZONE, formatStr);
 }
 

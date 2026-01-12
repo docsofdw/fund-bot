@@ -1,12 +1,12 @@
-// Morning report cron job (9:00 AM ET)
+// Morning report cron job (8:00 AM CT / 9:00 AM ET)
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from '../../lib/config';
 import { postMessage } from '../../lib/slack/client';
 import { getPortfolioSnapshot, getPortfolioMetrics, getCategoryBreakdown } from '../../lib/sheets/portfolio';
-import { getEquityMovers, getTopEquityHoldings } from '../../lib/sheets/equities';
-import { formatCurrency, formatNumber, formatPercent } from '../../lib/utils/formatting';
-import { formatDateET, formatTimeET, isWeekday } from '../../lib/utils/dates';
+import { getTopEquityHoldings } from '../../lib/sheets/equities';
+import { formatCurrency, formatNumber, formatPercent, formatStockPrice } from '../../lib/utils/formatting';
+import { formatDateCT, formatTimeCT, isWeekday } from '../../lib/utils/dates';
 import { getQuoteOfTheDay, formatQuote } from '../../lib/utils/daily-quotes';
 import { autoManageQuotes } from '../../lib/utils/auto-quote-manager';
 import { fetchMarketIndicators, formatMarketIndicators } from '../../lib/external/market-indicators';
@@ -56,15 +56,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Helper function to fetch all data in parallel
     async function fetchAllData() {
-      const [snapshot, metrics, categories, equityMovers, topEquities, marketIndicators] = await Promise.all([
+      const [snapshot, metrics, categories, topEquities, marketIndicators] = await Promise.all([
         getPortfolioSnapshot(),
         getPortfolioMetrics(),
         getCategoryBreakdown(),
-        getEquityMovers(5),
         getTopEquityHoldings(5),
         fetchMarketIndicators(),
       ]);
-      return { snapshot, metrics, categories, equityMovers, topEquities, marketIndicators };
+      return { snapshot, metrics, categories, topEquities, marketIndicators };
     }
 
     let data = await fetchAllData();
@@ -98,7 +97,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log(`[Morning Report] Data fetch completed in ${fetchDuration}ms (${attempt} attempt(s))`);
 
     // Extract data for easier access
-    const { snapshot, metrics, categories, equityMovers, topEquities, marketIndicators } = data;
+    const { snapshot, metrics, categories, topEquities, marketIndicators } = data;
 
     // If data is still invalid after retries, send an alert but continue with best effort
     if (!dataQualityReport.overallValid) {
@@ -132,8 +131,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Build message
     const now = new Date();
-    const dateStr = formatDateET(now);
-    const timeStr = formatTimeET(now);
+    const dateStr = formatDateCT(now);
+    const timeStr = formatTimeCT(now);
     
     const blocks = [
       createHeaderBlock(`☀️ Good Morning — Fund Summary`),
@@ -166,12 +165,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       createSectionBlock(
         `*📈 PORTFOLIO ALLOCATION*\n` +
-        (categories.length > 0
-          ? categories
-              .map((cat) => `${cat.category}: ${formatPercent(cat.weight)}`)
-              .join('\n')
-          : '_No allocation data available_') +
-        `\n% Long: ${formatPercent(metrics.percentLong)}`
+        (() => {
+          const nonZeroCategories = categories.filter((cat) => cat.weight > 0.001);
+          if (nonZeroCategories.length === 0) return '_No allocation data available_';
+          return nonZeroCategories
+            .map((cat) => `${cat.category}: ${formatPercent(cat.weight)}`)
+            .join('\n');
+        })()
       ),
       
       createDividerBlock(),
@@ -180,7 +180,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `*🎯 TOP 5 EQUITY HOLDINGS (USD)*\n` +
         (topEquities.length > 0
           ? topEquities
-              .map((p, i) => `${i + 1}. ${p.ticker} - ${formatCurrency(p.value)}`)
+              .map((p, i) => `${i + 1}. ${p.name}\n     Price: ${formatStockPrice(p.price)} • Value: ${formatCurrency(p.value)}`)
               .join('\n') +
             `\n\n_Top 5 Concentration: ${formatPercent(topHoldingsConcentration)}_`
           : '_No equity holdings available_')
@@ -190,33 +190,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       createSectionBlock(
         `*⚠️ RISK SNAPSHOT*\n` +
-        `% Long: ${formatPercent(metrics.percentLong)}\n` +
-        `Total Borrow: ${formatPercent(metrics.totalBorrowPercent)}\n` +
-        `Largest Equity: ${largestEquity ? `${formatPercent(largestPositionWeight)} (${largestEquity.ticker})` : 'N/A'}\n` +
-        `Extra BTC Exposure: ${formatNumber(metrics.extraBTCExposure)} BTC\n` +
-        `Net Cash: ${formatCurrency(metrics.netCash)}`
+        (() => {
+          const lines: string[] = [];
+          if (metrics.percentLong > 0.001) lines.push(`% Long: ${formatPercent(metrics.percentLong)}`);
+          if (metrics.totalBorrowPercent > 0.001) lines.push(`Total Borrow: ${formatPercent(metrics.totalBorrowPercent)}`);
+          if (largestEquity && largestPositionWeight > 0.001) lines.push(`Largest Equity: ${formatPercent(largestPositionWeight)} (${largestEquity.name})`);
+          if (Math.abs(metrics.extraBTCExposure) > 0.01) lines.push(`Extra BTC Exposure: ${formatNumber(metrics.extraBTCExposure)} BTC`);
+          if (Math.abs(metrics.netCash) > 100) lines.push(`Net Cash: ${formatCurrency(metrics.netCash)}`);
+          return lines.length > 0 ? lines.join('\n') : '_No significant risk metrics_';
+        })()
       ),
       
       createDividerBlock(),
-      
-      createSectionBlock(
-        `*🏆 EQUITY POSITIONS*\n\n` +
-        `*Trading at Premium (> NAV):*\n` +
-        (equityMovers.gainers.length > 0
-          ? equityMovers.gainers
-              .map((m) => `${m.mnav.toFixed(2)}x  ${m.ticker} - ${m.name}`)
-              .join('\n')
-          : '_No positions at premium_') +
-        `\n\n*Trading at Discount (< NAV):*\n` +
-        (equityMovers.losers.length > 0
-          ? equityMovers.losers
-              .map((m) => `${m.mnav.toFixed(2)}x  ${m.ticker} - ${m.name}`)
-              .join('\n')
-          : '_No positions at discount_')
-      ),
-      
-      createDividerBlock(),
-      
+
       createSectionBlock(formatQuote(getQuoteOfTheDay())),
     ];
 

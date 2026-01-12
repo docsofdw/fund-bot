@@ -1,10 +1,10 @@
 #!/usr/bin/env ts-node
 
 /**
- * Test morning report - posts to #test-daily-reports channel
- * Usage: npx ts-node run-test-morning-report.ts
+ * Test EOD report - posts to #test-daily-reports channel
+ * Usage: npx ts-node run-test-eod-report.ts
  *
- * Use this to preview the morning report before it goes to the main channel.
+ * Use this to preview the EOD report before it goes to the main channel.
  * Requires TEST_DAILY_REPORTS_CHANNEL_ID in your .env file.
  */
 
@@ -13,11 +13,10 @@ dotenvConfig();
 
 import { config } from './lib/config';
 import { postMessage } from './lib/slack/client';
-import { getPortfolioSnapshot, getPortfolioMetrics, getCategoryBreakdown } from './lib/sheets/portfolio';
-import { getTopEquityHoldings } from './lib/sheets/equities';
-import { formatCurrency, formatNumber, formatPercent, formatStockPrice } from './lib/utils/formatting';
-import { formatDateTimeCT } from './lib/utils/dates';
-import { getQuoteOfTheDay, formatQuote } from './lib/utils/daily-quotes';
+import { getPortfolioSnapshot, getPortfolioMetrics } from './lib/sheets/portfolio';
+import { getBTCTCMovers } from './lib/sheets/btctc';
+import { formatCurrency, formatNumber, formatPercent, formatPercentChange, formatStockPrice } from './lib/utils/formatting';
+import { formatDateCT, formatTimeCT } from './lib/utils/dates';
 import { fetchMarketIndicators, formatMarketIndicators } from './lib/external/market-indicators';
 import { generateDataQualityReport, shouldRetryDataFetch } from './lib/utils/data-validation';
 import {
@@ -39,17 +38,16 @@ function sleep(ms: number): Promise<void> {
 
 // Helper function to fetch all data in parallel
 async function fetchAllData() {
-  const [snapshot, metrics, categories, topEquities, marketIndicators] = await Promise.all([
+  const [snapshot, metrics, btctcMovers, marketIndicators] = await Promise.all([
     getPortfolioSnapshot(),
     getPortfolioMetrics(),
-    getCategoryBreakdown(),
-    getTopEquityHoldings(5),
+    getBTCTCMovers(3),
     fetchMarketIndicators(),
   ]);
-  return { snapshot, metrics, categories, topEquities, marketIndicators };
+  return { snapshot, metrics, btctcMovers, marketIndicators };
 }
 
-async function runTestMorningReport() {
+async function runTestEODReport() {
   // Validate test channel is configured
   const testChannelId = config.channels.testDailyReportsId;
   if (!testChannelId) {
@@ -63,7 +61,7 @@ async function runTestMorningReport() {
   }
 
   try {
-    console.log('🧪 Generating TEST morning report...\n');
+    console.log('🧪 Generating TEST EOD report...\n');
     console.log(`   Target channel: #test-daily-reports (${testChannelId})\n`);
 
     // Fetch with retry logic
@@ -86,7 +84,7 @@ async function runTestMorningReport() {
       }
     }
 
-    const { snapshot, metrics, categories, topEquities, marketIndicators } = data;
+    const { snapshot, metrics, btctcMovers, marketIndicators } = data;
 
     // Log data quality status
     if (dataQualityReport.overallValid) {
@@ -105,26 +103,15 @@ async function runTestMorningReport() {
     console.log(`   Bitcoin Delta: ${formatNumber(metrics.bitcoinDelta)} BTC`);
     console.log('');
 
-    // Calculate top holdings concentration
-    const topHoldingsTotal = topEquities.reduce((sum, p) => sum + p.value, 0);
-    const topHoldingsConcentration = snapshot.liveAUM > 0
-      ? topHoldingsTotal / snapshot.liveAUM
-      : 0;
-
-    // Find largest single equity position
-    const largestEquity = topEquities.length > 0 ? topEquities[0] : null;
-    const largestPositionWeight = largestEquity && snapshot.liveAUM > 0
-      ? largestEquity.value / snapshot.liveAUM
-      : 0;
-
     // Build message
     const now = new Date();
-    const dateTimeStr = formatDateTimeCT(now);
+    const dateStr = formatDateCT(now);
+    const timeStr = formatTimeCT(now);
 
     const blocks = [
-      createHeaderBlock(`🧪 [TEST] Good Morning — Fund Summary`),
+      createHeaderBlock(`🧪 [TEST] End of Day — Fund Summary`),
       createContextBlock([`_This is a TEST report - not sent to the main channel_`]),
-      createSectionBlock(`*${dateTimeStr}*`),
+      createSectionBlock(`*${dateStr}* • ${timeStr} CT`),
       createSectionBlock(
         `₿ BTC Price: ${formatCurrency(snapshot.btcPrice)}\n\n` +
         `*📊 MARKET INDICATORS*\n` +
@@ -145,53 +132,31 @@ async function runTestMorningReport() {
       createSectionBlock(
         `*📊 MONTH-TO-DATE*\n` +
         `Fund MTD: ${formatPercent(snapshot.fundMTD)}\n` +
-        `BTC MTD: ${formatPercent(snapshot.btcMTD)}\n` +
-        `Alpha: ${formatPercent(snapshot.fundMTD - snapshot.btcMTD)}`
+        `BTC MTD: ${formatPercent(snapshot.btcMTD)}`
       ),
 
       createDividerBlock(),
 
       createSectionBlock(
-        `*📈 PORTFOLIO ALLOCATION*\n` +
-        (() => {
-          const nonZeroCategories = categories.filter((cat) => cat.weight > 0.001);
-          if (nonZeroCategories.length === 0) return '_No allocation data available_';
-          return nonZeroCategories
-            .map((cat) => `${cat.category}: ${formatPercent(cat.weight)}`)
-            .join('\n');
-        })()
+        `*📊 BTCTC MOVERS*\n\n` +
+        `*Top Gainers:*\n` +
+        (btctcMovers.gainers.length > 0
+          ? btctcMovers.gainers
+              .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
+              .join('\n')
+          : '_No gainers today_') +
+        `\n\n*Top Losers:*\n` +
+        (btctcMovers.losers.length > 0
+          ? btctcMovers.losers
+              .map((m) => `${formatPercentChange(m.changePercent)}  ${m.ticker} (${formatStockPrice(m.price)}) - ${m.company}`)
+              .join('\n')
+          : '_No losers today_') +
+        `\n\n_Data from <https://docs.google.com/spreadsheets/d/1_whntepzncCFsn-K1oyL5Epqh5D6mauAOnb_Zs7svkk/edit?gid=0#gid=0|BTCTCs Master Sheet>_`
       ),
 
       createDividerBlock(),
 
-      createSectionBlock(
-        `*🎯 TOP 5 EQUITY HOLDINGS (USD)*\n` +
-        (topEquities.length > 0
-          ? topEquities
-              .map((p, i) => `${i + 1}. ${p.name}\n     Price: ${formatStockPrice(p.price)} • Value: ${formatCurrency(p.value)}`)
-              .join('\n') +
-            `\n\n_Top 5 Concentration: ${formatPercent(topHoldingsConcentration)}_`
-          : '_No equity holdings available_')
-      ),
-
-      createDividerBlock(),
-
-      createSectionBlock(
-        `*⚠️ RISK SNAPSHOT*\n` +
-        (() => {
-          const lines: string[] = [];
-          if (metrics.percentLong > 0.001) lines.push(`% Long: ${formatPercent(metrics.percentLong)}`);
-          if (metrics.totalBorrowPercent > 0.001) lines.push(`Total Borrow: ${formatPercent(metrics.totalBorrowPercent)}`);
-          if (largestEquity && largestPositionWeight > 0.001) lines.push(`Largest Equity: ${formatPercent(largestPositionWeight)} (${largestEquity.name})`);
-          if (Math.abs(metrics.extraBTCExposure) > 0.01) lines.push(`Extra BTC Exposure: ${formatNumber(metrics.extraBTCExposure)} BTC`);
-          if (Math.abs(metrics.netCash) > 100) lines.push(`Net Cash: ${formatCurrency(metrics.netCash)}`);
-          return lines.length > 0 ? lines.join('\n') : '_No significant risk metrics_';
-        })()
-      ),
-
-      createDividerBlock(),
-
-      createSectionBlock(formatQuote(getQuoteOfTheDay())),
+      createSectionBlock(`See you tomorrow! 🌙`),
     ];
 
     // Add data quality warning if there were issues
@@ -204,14 +169,14 @@ async function runTestMorningReport() {
     }
 
     // Post to TEST channel
-    await postMessage(testChannelId, '🧪 [TEST] Good Morning — Fund Summary', { blocks });
+    await postMessage(testChannelId, '🧪 [TEST] End of Day — Fund Summary', { blocks });
 
-    console.log('✅ Test morning report posted to #test-daily-reports!');
-    console.log('\n💡 If it looks good, the scheduled report will post to #daily-reports at 8:00 AM CT');
+    console.log('✅ Test EOD report posted to #test-daily-reports!');
+    console.log('\n💡 If it looks good, the scheduled report will post to #daily-reports at 3:30 PM CT');
   } catch (error) {
-    console.error('❌ Error generating test morning report:', error);
+    console.error('❌ Error generating test EOD report:', error);
     throw error;
   }
 }
 
-runTestMorningReport();
+runTestEODReport();

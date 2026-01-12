@@ -1,19 +1,18 @@
-// End of day report cron job (4:30 PM ET)
+// End of day report cron job (3:30 PM CT / 4:30 PM ET)
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from '../../lib/config';
 import { postMessage } from '../../lib/slack/client';
-import { getPortfolioSnapshot, getPortfolioMetrics, getAllPositions } from '../../lib/sheets/portfolio';
+import { getPortfolioSnapshot, getPortfolioMetrics } from '../../lib/sheets/portfolio';
 import { getBTCTCMovers } from '../../lib/sheets/btctc';
 import { formatCurrency, formatNumber, formatPercent, formatPercentChange, formatStockPrice } from '../../lib/utils/formatting';
-import { formatDateET, formatTimeET, isWeekday } from '../../lib/utils/dates';
+import { formatDateCT, formatTimeCT, isWeekday } from '../../lib/utils/dates';
 import { fetchMarketIndicators, formatMarketIndicators } from '../../lib/external/market-indicators';
 import {
   createHeaderBlock,
   createSectionBlock,
   createDividerBlock,
 } from '../../lib/slack/blocks';
-import { DailyMover } from '../../types';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Verify this is a cron request
@@ -33,10 +32,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const startTime = Date.now();
     console.log('[EOD Report] Starting data fetch...');
     
-    const [snapshot, metrics, positions, btctcMovers, marketIndicators] = await Promise.all([
+    const [snapshot, metrics, btctcMovers, marketIndicators] = await Promise.all([
       getPortfolioSnapshot(),
       getPortfolioMetrics(),
-      getAllPositions(),
       getBTCTCMovers(3),
       fetchMarketIndicators(),
     ]);
@@ -44,28 +42,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const fetchDuration = Date.now() - startTime;
     console.log(`[EOD Report] Data fetch completed in ${fetchDuration}ms`);
 
-    // Calculate daily change (would need historical data for accurate calculation)
-    // For now, we'll show a placeholder
-    const dailyChangeUSD = 0; // TODO: Implement historical tracking
-    const dailyChangePercent = 0;
-
-    // Get biggest movers from portfolio positions
-    // Note: This requires 1-day change data in the sheet
-    const portfolioMovers: DailyMover[] = positions
-      .filter((p) => p.category === 'BTC Equities')
-      .slice(0, 5)
-      .map((p) => ({
-        name: p.name,
-        ticker: p.ticker || '',
-        changePercent: 0, // TODO: Add 1D change to sheet data
-        price: p.price,
-        value: p.value,
-      }));
-
     // Build message
     const now = new Date();
-    const dateStr = formatDateET(now);
-    const timeStr = formatTimeET(now);
+    const dateStr = formatDateCT(now);
+    const timeStr = formatTimeCT(now);
     
     const blocks = [
       createHeaderBlock(`🌙 End of Day — Fund Summary`),

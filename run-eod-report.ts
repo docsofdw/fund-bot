@@ -13,7 +13,7 @@ import { postMessage } from './lib/slack/client';
 import { getPortfolioSnapshot, getPortfolioMetrics } from './lib/sheets/portfolio';
 import { getBTCTCMovers } from './lib/sheets/btctc';
 import { formatCurrency, formatNumber, formatPercent, formatPercentChange, formatStockPrice } from './lib/utils/formatting';
-import { formatDateTimeET } from './lib/utils/dates';
+import { formatDateTimeCT } from './lib/utils/dates';
 import { fetchMarketIndicators, formatMarketIndicators } from './lib/external/market-indicators';
 import {
   createHeaderBlock,
@@ -35,7 +35,7 @@ async function runEODReport() {
 
     // Build message
     const now = new Date();
-    const dateTimeStr = formatDateTimeET(now);
+    const dateTimeStr = formatDateTimeCT(now);
     
     const blocks = [
       createHeaderBlock(`🌙 End of Day — Fund Summary`),
