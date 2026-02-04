@@ -229,9 +229,7 @@ export function getMemoryStats(): {
   threadsWithSummaries: number;
 } {
   let totalMessages = 0;
-  let threadsWithSummaries = 0;
-
-  for (const context of threadMemory.values()) {
+  let threadsWithSummaries = 0;  for (const context of threadMemory.values()) {
     totalMessages += context.messages.length;
     if (context.summary) {
       threadsWithSummaries++;
@@ -243,7 +241,5 @@ export function getMemoryStats(): {
     totalMessages,
     threadsWithSummaries,
   };
-}
-
-// Auto-cleanup every hour
+}// Auto-cleanup every hour
 setInterval(clearExpiredThreads, 60 * 60 * 1000);

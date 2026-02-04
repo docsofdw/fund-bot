@@ -5,8 +5,8 @@ A Claude-powered Slack bot that provides conversational access to fund data from
 ## 🌟 Features
 
 - **Conversational Queries**: Ask natural language questions about portfolio positions, performance, and market context
-- **Daily Reports**: Automated morning (9 AM ET) and end-of-day (4:30 PM ET) reports
-- **Market Indicators**: Real-time Fear & Greed, Funding Rate, ETF Flows, MVRV, and DVOL in morning reports
+- **Daily Reports**: Automated morning (9 AM CT) and end-of-day (6 PM CT) reports
+- **Market Indicators**: Real-time Fear & Greed, MVRV, NUPL, Funding Rate, and 200W MA via Bitcoin Magazine Pro
 - **Thread Memory**: Maintains context within conversation threads for follow-up questions
 - **Real-time Data**: Fetches live data from Google Sheets on every query
 - **BTCTC Market Data**: Tracks Bitcoin treasury company performance
@@ -185,10 +185,26 @@ Biggest BTCTC movers today?
 
 The bot automatically posts reports to the configured `DAILY_REPORTS_CHANNEL_ID`:
 
-- **Morning Report**: 9:00 AM ET (Monday-Friday)
-- **End of Day Report**: 4:30 PM ET (Monday-Friday)
+- **Morning Report**: 9:00 AM CT (Monday-Friday) - Market context and on-chain metrics
+- **End of Day Report**: 6:00 PM CT (Monday-Friday) - Fund performance, top holdings, on-chain brief
+
+See [docs/REPORTS.md](./docs/REPORTS.md) for detailed documentation on report contents and data sources.
 
 ## 🛠️ Development
+
+### Testing
+
+Test reports locally before deploying:
+
+```bash
+# Test morning report (posts to test channel)
+npx tsx -r dotenv/config run-morning-report.ts --test
+
+# Test EOD report (posts to test channel)
+npx tsx -r dotenv/config run-eod-report.ts --test
+```
+
+For Vercel preview deployments, see [docs/ENV_CHECKLIST.md](./docs/ENV_CHECKLIST.md) to configure test channel routing.
 
 ### Local Development
 
@@ -204,6 +220,10 @@ npm run lint
 
 # Run local dev server
 npm run dev
+
+# Test reports locally
+npm run test:morning
+npm run test:eod
 ```
 
 For local development with Slack events, you'll need to use Socket Mode or ngrok to expose your local server.
@@ -265,27 +285,17 @@ See the [Project Specification](./SPEC.md) for detailed cell references and data
 - Environment variables stored securely in Vercel
 - Cron endpoints protected with secret token
 
-## 📊 Market Indicators (Free!)
+## 📊 Market Indicators
 
-Morning reports include 2 real-time market indicators:
+Reports include on-chain metrics from Bitcoin Magazine Pro:
 
-- **Fear & Greed Index** (FREE - Alternative.me)
-- **DVOL** (FREE - Deribit Volatility Index)
+- **Fear & Greed Index** - Market sentiment (0-100)
+- **MVRV Z-Score** - Market value vs realized value
+- **NUPL** - Net unrealized profit/loss
+- **Funding Rate** - Perpetual futures funding
+- **200 Week MA** - Long-term support level
 
-No API keys or configuration required!
-
-### Quick Test
-
-```bash
-# Test indicators
-npm run test:indicators
-
-# Run morning report
-npm run morning-report
-```
-
-📖 **Full Guide**: See [MARKET_INDICATORS_SETUP.md](./MARKET_INDICATORS_SETUP.md)  
-📋 **Quick Ref**: See [MARKET_INDICATORS_QUICK_REF.md](./MARKET_INDICATORS_QUICK_REF.md)
+Requires `BM_PRO_API_KEY` environment variable. See [docs/REPORTS.md](./docs/REPORTS.md) for metric details.
 
 ## 💰 Cost Estimates
 

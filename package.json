@@ -9,8 +9,12 @@
     "type-check": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "test:indicators": "ts-node test-market-indicators.ts",
+    "test:env": "npx tsx test-env-config.ts",
+    "test:morning": "npx tsx run-morning-report.ts",
+    "test:eod": "npx tsx run-eod-report.ts",
     "morning-report": "ts-node run-morning-report.ts",
-    "eod-report": "ts-node run-eod-report.ts"
+    "eod-report": "ts-node run-eod-report.ts",
+    "cleanup-messages": "ts-node cleanup-messages.ts"
   },
   "keywords": [
     "slack",
@@ -25,6 +29,7 @@
     "@anthropic-ai/sdk": "^0.28.0",
     "@slack/bolt": "^3.17.1",
     "@slack/web-api": "^7.0.2",
+    "@supabase/supabase-js": "^2.94.1",
     "date-fns": "^3.6.0",
     "date-fns-tz": "^3.0.0",
     "dotenv": "^17.2.3",

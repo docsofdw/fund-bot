@@ -107,11 +107,13 @@ export function validateMarketIndicators(indicators: MarketIndicators): Validati
 export function generateDataQualityReport(
   snapshot: PortfolioSnapshot,
   metrics: PortfolioMetrics,
-  marketIndicators: MarketIndicators
+  marketIndicators?: MarketIndicators
 ): DataQualityReport {
   const snapshotValidation = validatePortfolioSnapshot(snapshot);
   const metricsValidation = validatePortfolioMetrics(metrics);
-  const indicatorsValidation = validateMarketIndicators(marketIndicators);
+  const indicatorsValidation = marketIndicators
+    ? validateMarketIndicators(marketIndicators)
+    : { isValid: true, errors: [], warnings: [] };
 
   const criticalErrors = [
     ...snapshotValidation.errors,

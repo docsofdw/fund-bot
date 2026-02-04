@@ -11,6 +11,7 @@ export const SHEET_CONFIG = {
     portfolioStatistics: 'Portfolio Statistics!A1:J50',
     treasuryTracker: 'Treasury Tracker!A1:L20',
     btctcDashboard: 'Dashboard!A1:M100',
+    portCos: '210k PortCos!A1:B50', // Company name -> Ticker mapping
   },
   
   // Key cell references for Live Portfolio tab

@@ -13,6 +13,9 @@ interface Config {
   anthropic: {
     apiKey: string;
   };
+  bitcoinMagazinePro: {
+    apiKey?: string;
+  };
   sheets: {
     portfolioSheetId: string;
     btctcSheetId: string;
@@ -22,6 +25,7 @@ interface Config {
     askFundBotId: string;
     testDailyReportsId?: string;
   };
+  cronSecret?: string;
   env: 'development' | 'production';
 }
 
@@ -60,6 +64,9 @@ function validateEnv(): Config {
     anthropic: {
       apiKey: process.env.ANTHROPIC_API_KEY!,
     },
+    bitcoinMagazinePro: {
+      apiKey: process.env.BM_PRO_API_KEY,
+    },
     sheets: {
       portfolioSheetId: process.env.PORTFOLIO_SHEET_ID!,
       btctcSheetId: process.env.BTCTC_SHEET_ID!,
@@ -69,6 +76,7 @@ function validateEnv(): Config {
       askFundBotId: process.env.ASK_FUNDBOT_CHANNEL_ID!,
       testDailyReportsId: process.env.TEST_DAILY_REPORTS_CHANNEL_ID,
     },
+    cronSecret: process.env.CRON_SECRET,
     env: (process.env.NODE_ENV as 'development' | 'production') || 'development',
   };
 }
