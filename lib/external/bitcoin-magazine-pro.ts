@@ -12,6 +12,7 @@ export interface OnChainMetrics {
   mvrv: { value: number; classification: string } | null;
   nupl: { value: number; classification: string } | null;
   fundingRate: { value: number; sentiment: string } | null;
+  movingAverage1Y: { price: number } | null;
   movingAverage200W: { price: number } | null;
 }
 
@@ -230,6 +231,48 @@ async function fetchBMProFundingRate(): Promise<{ value: number; sentiment: stri
 }
 
 /**
+ * Fetch 1 Year (365 Day) Moving Average price calculated from CoinGecko historical data
+ * Uses 365 days of daily prices to calculate SMA
+ */
+async function fetch1YMA(): Promise<{ price: number } | null> {
+  try {
+    // Fetch 365 days of historical price data from CoinGecko (free API)
+    const response = await fetch(
+      'https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=daily',
+      {
+        headers: {
+          'Accept': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`[CoinGecko] API returned ${response.status} for 1Y MA calculation`);
+      return null;
+    }
+
+    const data = await response.json();
+    const prices = data.prices as [number, number][];
+
+    if (!prices || prices.length < 365) {
+      console.warn(`[CoinGecko] Insufficient price data for 1Y MA: ${prices?.length || 0} days`);
+      return null;
+    }
+
+    // Calculate simple moving average of all 365 daily prices
+    const sum = prices.reduce((acc, [_, price]) => acc + price, 0);
+    const sma = sum / prices.length;
+
+    return {
+      price: Math.round(sma),
+    };
+  } catch (error) {
+    console.error('[CoinGecko] Error calculating 1Y MA:', error);
+    return null;
+  }
+}
+
+/**
  * Fetch 200 Week Moving Average price from BM Pro
  */
 async function fetch200WMA(): Promise<{ price: number } | null> {
@@ -252,11 +295,12 @@ export async function fetchOnChainMetrics(): Promise<OnChainMetrics> {
   console.log('[BM Pro] Fetching on-chain metrics...');
   const startTime = Date.now();
 
-  const [fearGreed, mvrv, nupl, fundingRate, movingAverage200W] = await Promise.all([
+  const [fearGreed, mvrv, nupl, fundingRate, movingAverage1Y, movingAverage200W] = await Promise.all([
     fetchBMProFearGreed(),
     fetchMVRV(),
     fetchNUPL(),
     fetchBMProFundingRate(),
+    fetch1YMA(),
     fetch200WMA(),
   ]);
 
@@ -268,6 +312,7 @@ export async function fetchOnChainMetrics(): Promise<OnChainMetrics> {
     mvrv,
     nupl,
     fundingRate,
+    movingAverage1Y,
     movingAverage200W,
   };
 }
@@ -277,10 +322,6 @@ export async function fetchOnChainMetrics(): Promise<OnChainMetrics> {
  */
 export function formatOnChainBrief(metrics: OnChainMetrics, btcPrice: number): string {
   const lines: string[] = [];
-
-  // BTC Price header
-  lines.push(`*BTC:* $${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}`);
-  lines.push('');
 
   // Fear & Greed
   if (metrics.fearGreed) {
@@ -303,13 +344,18 @@ export function formatOnChainBrief(metrics: OnChainMetrics, btcPrice: number): s
     lines.push(`FR: ${sign}${metrics.fundingRate.value.toFixed(4)}%  _(${metrics.fundingRate.sentiment})_`);
   }
 
+  // 1 Year MA
+  if (metrics.movingAverage1Y) {
+    lines.push(`1Y MA: $${(metrics.movingAverage1Y.price / 1000).toFixed(1)}K`);
+  }
+
   // 200 Week MA
   if (metrics.movingAverage200W) {
     lines.push(`200W MA: $${(metrics.movingAverage200W.price / 1000).toFixed(1)}K`);
   }
 
-  if (lines.length <= 2) {
-    return '*ON-CHAIN BRIEF*\n_Metrics unavailable_';
+  if (lines.length === 0) {
+    return '_Metrics unavailable_';
   }
 
   return lines.join('\n');

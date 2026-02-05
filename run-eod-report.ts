@@ -7,7 +7,7 @@
  */
 
 import { config as dotenvConfig } from 'dotenv';
-dotenvConfig();
+dotenvConfig({ path: '.env.local' });
 
 import { config } from './lib/config';
 import { postMessage } from './lib/slack/client';

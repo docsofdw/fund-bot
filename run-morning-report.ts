@@ -31,13 +31,13 @@ const useTestChannel = process.argv.includes('--test');
 
 async function runMorningReport() {
   try {
-    // Auto-manage quote inventory before generating report
-    console.log('Checking quote inventory...\n');
-    await autoManageQuotes({
-      minThreshold: 80,
-      targetQuotes: 100,
-      batchSize: 50
-    });
+    // Auto-manage quote inventory (disabled - uncomment to re-enable)
+    // console.log('Checking quote inventory...\n');
+    // await autoManageQuotes({
+    //   minThreshold: 80,
+    //   targetQuotes: 100,
+    //   batchSize: 50
+    // });
 
     console.log('Generating morning report...\n');
 
@@ -72,6 +72,13 @@ async function runMorningReport() {
 
       createDividerBlock(),
 
+      // BTC PRICE
+      createSectionBlock(
+        `*BTC:* $${snapshot.btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      ),
+
+      createDividerBlock(),
+
       // ON-CHAIN BRIEF
       createSectionBlock(
         `*ON-CHAIN BRIEF*\n\n` +
@@ -86,12 +93,12 @@ async function runMorningReport() {
         `AUM: ${formatCurrency(snapshot.liveAUM)}\n` +
         `Fund MTD: ${formatPercent(snapshot.fundMTD)}\n` +
         `BTC MTD: ${formatPercent(snapshot.btcMTD)}\n` +
-        `Cash: ${formatPercent(cashPercent)}`
+        `Cash: ${(cashPercent * 100).toFixed(2)}%`
       ),
 
-      createDividerBlock(),
-
-      createSectionBlock(formatQuote(getQuoteOfTheDay())),
+      // Quote section (disabled - uncomment to re-enable)
+      // createDividerBlock(),
+      // createSectionBlock(formatQuote(getQuoteOfTheDay())),
     ];
 
     // Determine which channel to post to

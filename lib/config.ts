@@ -1,4 +1,13 @@
 // Environment configuration and validation
+import { config as dotenvConfig } from 'dotenv';
+import { existsSync } from 'fs';
+
+// Load .env.local if it exists, otherwise fall back to .env
+if (existsSync('.env.local')) {
+  dotenvConfig({ path: '.env.local' });
+} else {
+  dotenvConfig();
+}
 
 interface Config {
   slack: {

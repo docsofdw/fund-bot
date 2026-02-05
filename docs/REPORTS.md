@@ -16,21 +16,28 @@ The morning report provides market context and on-chain metrics to start the tra
 ### Content
 
 ```
-MORNING REPORT
+GOOD MORNING
 Monday, February 3, 2025 | 9:00 AM CT
 ────────────────────────────────────
 BTC: $97,234
 
+────────────────────────────────────
 ON-CHAIN BRIEF
 
 Fear & Greed:  72 (Greed)
 MVRV Z-Score:  2.34
-NUPL:          0.58 (Belief)
-Funding Rate:  0.0089%
-200W MA:       $45,678
+NUPL:          58% (Belief)
+Funding Rate:  +0.0089%
+1Y MA:         $67.5K
+200W MA:       $45.7K
 
 ────────────────────────────────────
-Have a great day!
+FUND BRIEF
+
+AUM: $132,456,789
+Fund MTD: -2.45%
+BTC MTD: -5.12%
+Cash: 8.50%
 ```
 
 ### Data Sources
@@ -38,11 +45,16 @@ Have a great day!
 | Metric | Source | API |
 |--------|--------|-----|
 | BTC Price | Google Sheets | Portfolio Sheet |
-| Fear & Greed | Alternative.me | Free, no key required |
+| Fear & Greed | Bitcoin Magazine Pro | Requires API key |
 | MVRV Z-Score | Bitcoin Magazine Pro | Requires API key |
 | NUPL | Bitcoin Magazine Pro | Requires API key |
 | Funding Rate | Bitcoin Magazine Pro | Requires API key |
+| 1Y MA | CoinGecko | Free, calculated from 365D prices |
 | 200W MA | Bitcoin Magazine Pro | Requires API key |
+| AUM | Google Sheets | Live Portfolio tab |
+| Fund MTD | Google Sheets | Portfolio Sheet |
+| BTC MTD | Google Sheets | Portfolio Sheet |
+| Cash % | Google Sheets | Category breakdown |
 
 ### Metric Descriptions
 
@@ -50,6 +62,7 @@ Have a great day!
 - **MVRV Z-Score:** Market Value to Realized Value ratio. Values > 7 historically indicate market tops, < 0 indicate bottoms
 - **NUPL (Net Unrealized Profit/Loss):** Shows aggregate profit/loss of all BTC holders. Phases: Capitulation (<0), Hope (0-0.25), Optimism (0.25-0.5), Belief (0.5-0.75), Euphoria (>0.75)
 - **Funding Rate:** Perpetual futures funding rate. Positive = longs pay shorts (bullish sentiment), Negative = shorts pay longs (bearish sentiment)
+- **1 Year Moving Average:** 365-day simple moving average, calculated from CoinGecko historical prices. Key intermediate support/resistance level
 - **200 Week Moving Average:** Long-term support level. BTC rarely trades below this level
 
 ### Manual Testing
@@ -87,9 +100,10 @@ Monday, February 3, 2025 | 6:00 PM CT
 ────────────────────────────────────
 BTC: $97,234
 
+────────────────────────────────────
 210K BRIEF
 
-AUM: $132.4M
+AUM: $132,456,789
 Fund 1D: +0.45%
 BTC 1D: -2.31%
 
@@ -103,9 +117,10 @@ ON-CHAIN BRIEF
 
 Fear & Greed:  68 (Greed)
 MVRV Z-Score:  2.31
-NUPL:          0.57 (Belief)
-Funding Rate:  0.0076%
-200W MA:       $45,678
+NUPL:          57% (Belief)
+Funding Rate:  +0.0076%
+1Y MA:         $67.5K
+200W MA:       $45.7K
 
 ────────────────────────────────────
 See you tomorrow
@@ -121,7 +136,8 @@ See you tomorrow
 | BTC 1D | CoinMarketCap | 24h change |
 | Top Holdings | Google Sheets | Live Portfolio tab |
 | Stock 1D % | Yahoo Finance / Twelve Data | Real-time quotes |
-| On-Chain Metrics | Bitcoin Magazine Pro | Same as morning report |
+| On-Chain Metrics | Bitcoin Magazine Pro | Fear & Greed, MVRV, NUPL, FR, 200W MA |
+| 1Y MA | CoinGecko | Free, calculated from 365D prices |
 
 ### How Fund 1D is Calculated
 
@@ -160,6 +176,7 @@ npx tsx -r dotenv/config run-eod-report.ts
 - CoinMarketCap client: `lib/external/coinmarketcap.ts`
 - Twelve Data client: `lib/external/twelvedata.ts`
 - Yahoo Finance client: `lib/external/yahoo-finance.ts`
+- On-chain metrics (incl. 1Y MA): `lib/external/bitcoin-magazine-pro.ts`
 
 ---
 

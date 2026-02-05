@@ -42,13 +42,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ message: 'Skipped - weekend' });
     }
 
-    // Auto-manage quote inventory (non-blocking - won't fail report if it fails)
-    try {
-      console.log('[Morning Report] Checking quote inventory...');
-      await autoManageQuotes({ minThreshold: 80, targetQuotes: 100, batchSize: 50 });
-    } catch (quoteError) {
-      console.warn('[Morning Report] Quote auto-generation failed (non-fatal):', quoteError);
-    }
+    // Auto-manage quote inventory (disabled - uncomment to re-enable)
+    // try {
+    //   console.log('[Morning Report] Checking quote inventory...');
+    //   await autoManageQuotes({ minThreshold: 80, targetQuotes: 100, batchSize: 50 });
+    // } catch (quoteError) {
+    //   console.warn('[Morning Report] Quote auto-generation failed (non-fatal):', quoteError);
+    // }
 
     // Fetch data with timeout tracking and retry logic for zero values
     const startTime = Date.now();
@@ -138,6 +138,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       createDividerBlock(),
 
+      // BTC PRICE
+      createSectionBlock(
+        `*BTC:* $${snapshot.btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+      ),
+
+      createDividerBlock(),
+
       // ON-CHAIN BRIEF
       createSectionBlock(
         `*ON-CHAIN BRIEF*\n\n` +
@@ -152,12 +159,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `AUM: ${formatCurrency(snapshot.liveAUM)}\n` +
         `Fund MTD: ${formatPercent(snapshot.fundMTD)}\n` +
         `BTC MTD: ${formatPercent(snapshot.btcMTD)}\n` +
-        `Cash: ${formatPercent(cashPercent)}`
+        `Cash: ${(cashPercent * 100).toFixed(2)}%`
       ),
 
-      createDividerBlock(),
-
-      createSectionBlock(formatQuote(getQuoteOfTheDay())),
+      // Quote section (disabled - uncomment to re-enable)
+      // createDividerBlock(),
+      // createSectionBlock(formatQuote(getQuoteOfTheDay())),
     ];
 
     // Post to Slack
