@@ -37,7 +37,7 @@ FUND BRIEF
 AUM: $132,456,789
 Fund MTD: -2.45%
 BTC MTD: -5.12%
-Cash: 8.50%
+Cash: $10,500,000
 ```
 
 ### Data Sources
@@ -54,7 +54,7 @@ Cash: 8.50%
 | AUM | Google Sheets | Live Portfolio tab |
 | Fund MTD | Google Sheets | Portfolio Sheet |
 | BTC MTD | Google Sheets | Portfolio Sheet |
-| Cash % | Google Sheets | Category breakdown |
+| Cash | Google Sheets | Category breakdown (totalValue) |
 
 ### Metric Descriptions
 

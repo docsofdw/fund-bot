@@ -128,9 +128,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const dateStr = formatDateCT(now);
     const timeStr = formatTimeCT(now);
 
-    // Calculate cash percentage
+    // Get cash balance
     const cashCategory = categories.find(cat => cat.category === 'Cash');
-    const cashPercent = cashCategory ? cashCategory.weight : 0;
+    const cashBalance = cashCategory ? cashCategory.totalValue : 0;
 
     const blocks = [
       createHeaderBlock(`GOOD MORNING`),
@@ -159,7 +159,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `AUM: ${formatCurrency(snapshot.liveAUM)}\n` +
         `Fund MTD: ${formatPercent(snapshot.fundMTD)}\n` +
         `BTC MTD: ${formatPercent(snapshot.btcMTD)}\n` +
-        `Cash: ${(cashPercent * 100).toFixed(2)}%`
+        `Cash: ${formatCurrency(cashBalance)}`
       ),
 
       // Quote section (disabled - uncomment to re-enable)
