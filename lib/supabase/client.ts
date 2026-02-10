@@ -1,6 +1,16 @@
 // Supabase client for daily snapshots
 
 import { createClient } from '@supabase/supabase-js';
+import { formatInTimeZone } from 'date-fns-tz';
+
+const CT_TIMEZONE = 'America/Chicago';
+
+/**
+ * Get today's date in CT timezone (YYYY-MM-DD format)
+ */
+function getTodayDateCT(): string {
+  return formatInTimeZone(new Date(), CT_TIMEZONE, 'yyyy-MM-dd');
+}
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -25,7 +35,7 @@ export interface DailySnapshot {
  * Save a morning snapshot
  */
 export async function saveMorningSnapshot(aum: number, btcPrice: number): Promise<void> {
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = getTodayDateCT();
 
   const { error } = await supabase
     .from('daily_snapshots')
@@ -49,7 +59,7 @@ export async function saveMorningSnapshot(aum: number, btcPrice: number): Promis
  * Get today's morning snapshot
  */
 export async function getTodaySnapshot(): Promise<DailySnapshot | null> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getTodayDateCT();
 
   const { data, error } = await supabase
     .from('daily_snapshots')
