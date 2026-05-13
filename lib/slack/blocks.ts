@@ -4,10 +4,12 @@ import type { Brief } from '../terminal/brief';
 import { fmtUsd, fmtPct } from '../format';
 
 export function buildEodReportBlocks(brief: Brief) {
-  // A change1dPct of exactly 0 from the terminal usually indicates the upstream
-  // price sync skipped the ticker (foreign-listing lookup failure) rather than
-  // a truly flat day. Mark these with an asterisk and add a footnote so readers
-  // don't mistake stale data for real movement.
+  // The terminal API distinguishes:
+  //   change1dPct === null → upstream feed stale (>3d) — fmtPct renders "N/A"
+  //   change1dPct === 0    → upstream returned a quote with no movement (honest flat
+  //                          day OR thin-trading sub-tick noise on penny names).
+  //                          Asterisk + footnote so readers don't misread the signal.
+  //   anything else        → normal +X.XX% / -X.XX%
   const hasZeroChange = brief.topHoldings.some(h => h.change1dPct === 0);
 
   const holdings = brief.topHoldings
@@ -18,7 +20,7 @@ export function buildEodReportBlocks(brief: Brief) {
     .join('\n');
 
   const footnote = hasZeroChange
-    ? '\n_* live quote pending — likely an international-listing sync gap_'
+    ? '\n_* upstream reports no movement — possible flat day or thin trading_'
     : '';
 
   return [
