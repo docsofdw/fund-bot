@@ -1,6 +1,6 @@
-// End of day report cron job (00:00 UTC / 6:00 PM CT after DST shift, 7:00 PM CT in standard time)
-// Pulls a unified payload from the terminal /api/brief endpoint instead of fetching from
-// Google Sheets / Supabase / Twelve Data / CMC / Bitcoin Magazine Pro directly.
+// End of day report cron job (00:00 UTC / 7:00 PM CT)
+// Pulls portfolio + holdings data from the terminal /api/brief endpoint.
+// On-chain metrics still come from Bitcoin Magazine Pro directly.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { config } from '../../lib/config';
@@ -9,30 +9,36 @@ import { fetchBrief } from '../../lib/terminal/brief';
 import { buildEodReportBlocks } from '../../lib/slack/blocks';
 import { isWeekday } from '../../lib/utils/dates';
 import { fmtUsd } from '../../lib/format';
+import { fetchOnChainMetrics, type OnChainMetrics } from '../../lib/external/bitcoin-magazine-pro';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Verify this is a cron request
   const authHeader = req.headers.authorization;
   if (authHeader !== `Bearer ${process.env.CRON_SECRET || 'development'}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
-    // Only run on weekdays
     if (!isWeekday()) {
       console.log('Skipping EOD report - not a weekday');
       return res.status(200).json({ message: 'Skipped - weekend' });
     }
 
     const startTime = Date.now();
-    console.log('[EOD Report] Fetching brief from terminal...');
+    console.log('[EOD Report] Fetching brief + on-chain metrics...');
 
-    const brief = await fetchBrief();
+    // On-chain fetch must not block the report — if BM Pro is down we still want
+    // to post the 210K brief section.
+    const [brief, onChainMetrics] = await Promise.all([
+      fetchBrief(),
+      fetchOnChainMetrics().catch((err): OnChainMetrics | null => {
+        console.warn('[EOD Report] On-chain metrics fetch failed, skipping section:', err instanceof Error ? err.message : err);
+        return null;
+      }),
+    ]);
 
-    const fetchDuration = Date.now() - startTime;
-    console.log(`[EOD Report] Brief fetched in ${fetchDuration}ms (asOf=${brief.asOf})`);
+    console.log(`[EOD Report] Data fetched in ${Date.now() - startTime}ms (asOf=${brief.asOf}, on-chain=${onChainMetrics ? 'ok' : 'unavailable'})`);
 
-    const blocks = buildEodReportBlocks(brief);
+    const blocks = buildEodReportBlocks(brief, onChainMetrics);
 
     await postMessage(
       config.channels.dailyReportsId,
@@ -45,7 +51,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (error) {
     console.error('[EOD Report] ERROR:', error);
 
-    // Try to post error notification to Slack
     try {
       await postMessage(
         config.channels.dailyReportsId,

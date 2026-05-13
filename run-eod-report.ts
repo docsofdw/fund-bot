@@ -14,6 +14,7 @@ import { postMessage } from './lib/slack/client';
 import { fetchBrief } from './lib/terminal/brief';
 import { buildEodReportBlocks } from './lib/slack/blocks';
 import { fmtUsd } from './lib/format';
+import { fetchOnChainMetrics, type OnChainMetrics } from './lib/external/bitcoin-magazine-pro';
 
 const useTestChannel = process.argv.includes('--test');
 
@@ -21,10 +22,16 @@ async function runEODReport() {
   try {
     console.log('Generating EOD report...\n');
 
-    const brief = await fetchBrief();
-    console.log(`Brief fetched (asOf=${brief.asOf})`);
+    const [brief, onChainMetrics] = await Promise.all([
+      fetchBrief(),
+      fetchOnChainMetrics().catch((err): OnChainMetrics | null => {
+        console.warn('On-chain metrics fetch failed, skipping section:', err instanceof Error ? err.message : err);
+        return null;
+      }),
+    ]);
+    console.log(`Brief fetched (asOf=${brief.asOf}); on-chain=${onChainMetrics ? 'ok' : 'unavailable'}`);
 
-    const blocks = buildEodReportBlocks(brief);
+    const blocks = buildEodReportBlocks(brief, onChainMetrics);
 
     const channelId = useTestChannel
       ? config.channels.testDailyReportsId
