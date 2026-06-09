@@ -1,5 +1,3 @@
-#!/usr/bin/env ts-node
-
 /**
  * Manual trigger script for morning report
  * Usage: npx tsx run-morning-report.ts [--test]
@@ -9,99 +7,31 @@
  */
 
 import { config as dotenvConfig } from 'dotenv';
-dotenvConfig();
+dotenvConfig({ path: '.env.local' });
 
 import { config } from './lib/config';
 import { postMessage } from './lib/slack/client';
-import { getPortfolioSnapshot, getPortfolioMetrics, getCategoryBreakdown } from './lib/sheets/portfolio';
-import { formatCurrency, formatPercent } from './lib/utils/formatting';
-import { formatDateCT, formatTimeCT } from './lib/utils/dates';
-import { getQuoteOfTheDay, formatQuote } from './lib/utils/daily-quotes';
-import { autoManageQuotes } from './lib/utils/auto-quote-manager';
-import { fetchOnChainMetrics, formatOnChainBrief } from './lib/external/bitcoin-magazine-pro';
-import { saveMorningSnapshot } from './lib/supabase/client';
-import {
-  createHeaderBlock,
-  createSectionBlock,
-  createDividerBlock,
-} from './lib/slack/blocks';
+import { fetchMorningBrief } from './lib/terminal/morning-brief';
+import { buildMorningReportBlocks } from './lib/slack/blocks';
+import { fetchOnChainMetrics, type OnChainMetrics } from './lib/external/bitcoin-magazine-pro';
 
-// Check for --test flag
 const useTestChannel = process.argv.includes('--test');
 
 async function runMorningReport() {
   try {
-    // Auto-manage quote inventory (disabled - uncomment to re-enable)
-    // console.log('Checking quote inventory...\n');
-    // await autoManageQuotes({
-    //   minThreshold: 80,
-    //   targetQuotes: 100,
-    //   batchSize: 50
-    // });
-
     console.log('Generating morning report...\n');
 
-    // Fetch data
-    const [snapshot, metrics, categories, onChainMetrics] = await Promise.all([
-      getPortfolioSnapshot(),
-      getPortfolioMetrics(),
-      getCategoryBreakdown(),
-      fetchOnChainMetrics(),
+    const [brief, onChainMetrics] = await Promise.all([
+      fetchMorningBrief(),
+      fetchOnChainMetrics().catch((err): OnChainMetrics | null => {
+        console.warn('On-chain metrics fetch failed, skipping section:', err instanceof Error ? err.message : err);
+        return null;
+      }),
     ]);
+    console.log(`Brief fetched (asOf=${brief.asOf}); on-chain=${onChainMetrics ? 'ok' : 'unavailable'}`);
 
-    // Save morning snapshot to Supabase for EOD 1D calculation
-    try {
-      await saveMorningSnapshot(snapshot.liveAUM, snapshot.btcPrice);
-      console.log('Morning snapshot saved to Supabase\n');
-    } catch (snapshotError) {
-      console.warn('Failed to save morning snapshot:', snapshotError);
-    }
+    const blocks = buildMorningReportBlocks(brief, onChainMetrics);
 
-    // Build message
-    const now = new Date();
-    const dateStr = formatDateCT(now);
-    const timeStr = formatTimeCT(now);
-
-    // Get cash balance
-    const cashCategory = categories.find(cat => cat.category === 'Cash');
-    const cashBalance = cashCategory ? cashCategory.totalValue : 0;
-
-    const blocks = [
-      createHeaderBlock(`GOOD MORNING`),
-      createSectionBlock(`*${dateStr}* | ${timeStr} CT`),
-
-      createDividerBlock(),
-
-      // BTC PRICE
-      createSectionBlock(
-        `*BTC:* $${snapshot.btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-      ),
-
-      createDividerBlock(),
-
-      // ON-CHAIN BRIEF
-      createSectionBlock(
-        `*ON-CHAIN BRIEF*\n\n` +
-        formatOnChainBrief(onChainMetrics, snapshot.btcPrice)
-      ),
-
-      createDividerBlock(),
-
-      // FUND BRIEF
-      createSectionBlock(
-        `*FUND BRIEF*\n\n` +
-        `AUM: ${formatCurrency(snapshot.liveAUM)}\n` +
-        `Fund MTD: ${formatPercent(snapshot.fundMTD)}\n` +
-        `BTC MTD: ${formatPercent(snapshot.btcMTD)}\n` +
-        `Cash: ${formatCurrency(cashBalance)}`
-      ),
-
-      // Quote section (disabled - uncomment to re-enable)
-      // createDividerBlock(),
-      // createSectionBlock(formatQuote(getQuoteOfTheDay())),
-    ];
-
-    // Determine which channel to post to
     const channelId = useTestChannel
       ? config.channels.testDailyReportsId
       : config.channels.dailyReportsId;
@@ -110,9 +40,8 @@ async function runMorningReport() {
       throw new Error('Channel ID not configured');
     }
 
-    console.log(`Posting to ${useTestChannel ? 'TEST' : 'PRODUCTION'} channel...\n`);
+    console.log(`\nPosting to ${useTestChannel ? 'TEST' : 'PRODUCTION'} channel...\n`);
 
-    // Post to Slack
     await postMessage(channelId, 'Good Morning — Fund Summary', { blocks });
 
     console.log('Morning report posted successfully!');
