@@ -1,11 +1,23 @@
 // Slack Block Kit message builders
 
-import type { Brief } from '../terminal/brief';
+import type { Brief, BriefHolding } from '../terminal/brief';
 import type { MorningBrief } from '../terminal/morning-brief';
 import type { OnChainMetrics } from '../external/bitcoin-magazine-pro';
 import { formatOnChainBrief } from '../external/bitcoin-magazine-pro';
 import { fmtUsd, fmtPct } from '../format';
 import { formatDateCT, formatTimeCT } from '../utils/dates';
+
+// Short display names for the holdings report, keyed by ticker (more stable than
+// the legal name across rebrands). Falls back to the API's full name, so an
+// unmapped or newly renamed holding is merely verbose — never wrong or dropped.
+const HOLDING_DISPLAY_NAMES: Record<string, string> = {
+  ASTR: 'Astra',
+  SWC: 'Smarter Web',
+};
+
+function holdingDisplayName(h: BriefHolding): string {
+  return HOLDING_DISPLAY_NAMES[h.ticker] ?? h.name;
+}
 
 export function buildEodReportBlocks(
   brief: Brief,
@@ -22,19 +34,26 @@ export function buildEodReportBlocks(
   //                          Asterisk + footnote so readers don't misread the signal.
   //   anything else        → normal +X.XX% / -X.XX%
   const hasZeroChange = brief.topHoldings.some(h => h.change1dPct === 0);
+  const hasStaleFeed = brief.topHoldings.some(h => h.change1dPct === null);
 
   const holdings = brief.topHoldings.length > 0
     ? brief.topHoldings
         .map((h, i) => {
+          const name = holdingDisplayName(h);
+          // A null change is a dead/suspended feed. Render it LOUD rather than a
+          // bare "N/A" — a silent N/A is exactly what hid the DV8 outage for weeks.
+          if (h.change1dPct === null) {
+            return `${i + 1}. ${name}  no recent quote†`;
+          }
           const marker = h.change1dPct === 0 ? '*' : '';
-          return `${i + 1}. ${h.name}  ${fmtPct(h.change1dPct)}${marker}`;
+          return `${i + 1}. ${name}  ${fmtPct(h.change1dPct)}${marker}`;
         })
         .join('\n')
     : '_No holdings data_';
 
-  const footnote = hasZeroChange
-    ? '\n_* upstream reports no movement — possible flat day or thin trading_'
-    : '';
+  const footnote =
+    (hasZeroChange ? '\n_* upstream reports no movement — possible flat day or thin trading_' : '') +
+    (hasStaleFeed ? '\n_† no recent price quote — feed may be stale or the listing suspended_' : '');
 
   const blocks: any[] = [
     createHeaderBlock('END OF DAY'),
