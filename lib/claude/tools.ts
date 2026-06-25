@@ -18,7 +18,7 @@
 // by the prompt, and the help text does not promise them.
 
 import type { Tool, ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages';
-import { getFundSummary, type FundSummary } from '../terminal/summary';
+import { getFundSummary, asOfLabel, type FundSummary } from '../terminal/summary';
 import { fmtUsd, fmtPct } from '../format';
 
 // Cap on tool iterations in the agent loop — bounds cost and latency.
@@ -76,7 +76,9 @@ function renderFundSummary(s: FundSummary): string {
       ? fmtPct(s.fund.mtdPct - s.btc.mtdPct)
       : 'N/A';
   return [
-    `asOf: ${s.asOf}`,
+    // asOfLabel surfaces the EOD-brief timestamp for the 1d fields when it differs
+    // from the morning asOf, so the model cites the right freshness.
+    `asOf: ${asOfLabel(s)}`,
     `Source: 210k terminal API`,
     `Live AUM: ${fmtUsd(s.fund.aumUsd)}`,
     `Fund 1d: ${fmtPct(s.fund.change1dPct)}`,
@@ -91,15 +93,17 @@ function renderFundSummary(s: FundSummary): string {
 }
 
 function renderTopHoldings(s: FundSummary): string {
+  // Holdings + their 1d moves come from the EOD brief, so cite that timestamp.
+  const asOf = s.briefAsOf ?? s.asOf;
   if (!s.topHoldings || s.topHoldings.length === 0) {
-    return `asOf: ${s.asOf}\nSource: 210k terminal API\nNo top holdings available.`;
+    return `asOf: ${asOf}\nSource: 210k terminal API\nNo top holdings available.`;
   }
   const lines = s.topHoldings.map(
     (h) =>
       `- ${h.name} (${h.ticker || 'N/A'}): ${fmtPct(h.weightPercent)} weight, ` +
       `${fmtPct(h.change1dPct)} 1d`
   );
-  return [`asOf: ${s.asOf}`, `Source: 210k terminal API`, 'Top holdings:', ...lines].join(
+  return [`asOf: ${asOf}`, `Source: 210k terminal API`, 'Top holdings:', ...lines].join(
     '\n'
   );
 }
@@ -138,9 +142,12 @@ export async function dispatchTool(
         return { content: `Unknown tool "${name}".`, isError: true };
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    // Log the full error server-side, but do NOT surface the raw upstream message
+    // to the model (and thence to Slack) — a terminal error body can contain
+    // internal endpoint paths / stack traces. Claude gets a generic note only.
+    console.error(`[Tool] ${name} backing fetch failed:`, err);
     return {
-      content: `The "${name}" data source is temporarily unavailable (${message}). Answer with whatever you already have and tell the user this figure could not be fetched.`,
+      content: `The "${name}" data source is temporarily unavailable. Answer with whatever you already have and tell the user this figure could not be fetched.`,
       isError: true,
     };
   }

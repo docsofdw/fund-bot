@@ -5,7 +5,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../../lib/config';
 import { LISTEN_ALL_CHANNELS } from '../../config/channels';
 import { postMessage, addReaction } from '../../lib/slack/client';
-import { getFundSummary } from '../../lib/terminal/summary';
+import { getFundSummary, type FundSummary } from '../../lib/terminal/summary';
 import { sendMessageWithTools } from '../../lib/claude/client';
 import { buildSystemPrompt } from '../../lib/claude/prompts';
 import { addMessageToThread, getThreadMessages, getThreadMessagesWithFallback, getThreadStats } from '../../lib/claude/memory';
@@ -261,9 +261,18 @@ async function handleEvent(event: any) {
     }
 
     // Fetch fund data from the terminal API (same source as the daily reports).
+    // Memoize for the lifetime of this request so the prompt seed AND every
+    // in-loop tool call share ONE fetch (the data can't change within a single
+    // ~30s request) instead of re-hitting /api/brief + /api/morning-brief each time.
+    let summaryPromise: Promise<FundSummary> | null = null;
+    const fetchFundSummary = (): Promise<FundSummary> => {
+      if (!summaryPromise) summaryPromise = getFundSummary();
+      return summaryPromise;
+    };
+
     console.log('[Terminal] Fetching fund summary...');
     const summary = await withTimeout(
-      getFundSummary(),
+      fetchFundSummary(),
       TIMEOUTS.sheets,
       'Terminal data fetch'
     );
@@ -313,7 +322,9 @@ async function handleEvent(event: any) {
     // degrades gracefully (Claude answers with what it has) rather than crashing.
     console.log('[Claude] Sending message to Claude API (tool-use)...');
     const result = await withTimeout(
-      sendMessageWithTools(systemPrompt, sanitizedText, conversationHistory),
+      sendMessageWithTools(systemPrompt, sanitizedText, conversationHistory, {
+        getFundSummary: fetchFundSummary,
+      }),
       TIMEOUTS.claude,
       'Claude API call'
     );
@@ -375,8 +386,8 @@ async function handleEvent(event: any) {
       // Timeout errors
       if (msg.includes('timed out')) {
         errorType = 'timeout';
-        if (msg.includes('portfolio') || msg.includes('sheets')) {
-          userMessage = '⏱️ The portfolio data took too long to load. Our Google Sheets might be slow. Please try again in a moment.';
+        if (msg.includes('terminal')) {
+          userMessage = '⏱️ The fund data took too long to load from the terminal API. Please try again in a moment.';
         } else if (msg.includes('claude')) {
           userMessage = '⏱️ The AI response took too long. Please try a shorter or simpler question.';
         } else {
@@ -393,10 +404,10 @@ async function handleEvent(event: any) {
         errorType = 'ai_service';
         userMessage = '🤖 The AI service is temporarily unavailable. Please try again in a few minutes.';
       }
-      // Google Sheets errors
-      else if (msg.includes('sheets') || msg.includes('google') || msg.includes('spreadsheet')) {
-        errorType = 'sheets';
-        userMessage = '📊 I had trouble fetching portfolio data. The Google Sheets service may be slow or unavailable. Please try again in a moment.';
+      // Terminal API / fund-data errors (units guard, 4xx/5xx, unavailable)
+      else if (msg.includes('terminal') || msg.includes('units check failed')) {
+        errorType = 'terminal';
+        userMessage = '📊 I had trouble fetching fund data from the terminal API. It may be slow or temporarily unavailable. Please try again in a moment.';
       }
       // Slack errors
       else if (msg.includes('slack')) {

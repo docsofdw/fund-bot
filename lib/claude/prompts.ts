@@ -22,6 +22,13 @@ export function formatAsOf(asOfIso: string): string {
 export function buildSystemPrompt(data: { summary: FundSummary }): string {
   const { summary } = data;
   const asOfEt = formatAsOf(summary.asOf);
+  // The 1d-change fields and holdings come from the EOD brief, which can carry a
+  // different timestamp than the (morning) asOf. When it differs, tell Claude so it
+  // cites the right freshness for "today's moves" / holdings questions.
+  const briefAsOfEt =
+    summary.briefAsOf && summary.briefAsOf !== summary.asOf
+      ? formatAsOf(summary.briefAsOf)
+      : null;
 
   const alpha =
     summary.fund.mtdPct != null && summary.btc.mtdPct != null
@@ -56,7 +63,11 @@ CURRENT DATA (as of ${asOfEt} ET — source: 210k terminal API):
   prompt += `
 
 DATA SOURCE & PROVENANCE (IMPORTANT):
-- All figures above and from your tools come from the 210k terminal API, "as of ${asOfEt} ET".
+- All figures above and from your tools come from the 210k terminal API, "as of ${asOfEt} ET".${
+    briefAsOfEt
+      ? `\n- The 1-day changes and top holdings are as of ${briefAsOfEt} ET (from the EOD brief); cite that time for those figures.`
+      : ''
+  }
 - Always stamp your answer with the as-of time and source, e.g. end with: "_(as of ${asOfEt} ET · 210k terminal)_". If a tool returns its own "asOf", cite that time instead for those figures.
 - Do NOT invent or estimate numbers. If a figure shows N/A or you cannot fetch it, say so plainly.
 

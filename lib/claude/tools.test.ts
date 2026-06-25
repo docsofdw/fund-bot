@@ -76,6 +76,25 @@ describe('dispatchTool', () => {
     expect(r.content).toContain('No top holdings available.');
   });
 
+  test('holdings cite the EOD-brief asOf, not the morning asOf (provenance)', async () => {
+    const provDeps: ToolDeps = {
+      getFundSummary: async () => ({
+        ...summary,
+        asOf: '2026-06-22T13:00:00.000Z', // morning brief
+        briefAsOf: '2026-06-22T22:00:00.000Z', // EOD brief — holdings come from here
+      }),
+    };
+    const holdings = await dispatchTool('get_top_holdings', {}, provDeps);
+    expect(holdings.content).toContain('asOf: 2026-06-22T22:00:00.000Z');
+    expect(holdings.content).not.toContain('asOf: 2026-06-22T13:00:00.000Z');
+
+    // The fund summary headline surfaces BOTH timestamps so the 1d figures
+    // aren't silently stamped with the morning time.
+    const fund = await dispatchTool('get_fund_summary', {}, provDeps);
+    expect(fund.content).toContain('asOf: 2026-06-22T13:00:00.000Z');
+    expect(fund.content).toContain('1d change & holdings as of 2026-06-22T22:00:00.000Z');
+  });
+
   test('unknown tool name degrades gracefully (is_error, no throw)', async () => {
     const r = await dispatchTool('get_onchain_metrics', { ticker: 'MSTR' }, okDeps);
     expect(r.isError).toBe(true);
@@ -91,7 +110,9 @@ describe('dispatchTool', () => {
     const r = await dispatchTool('get_fund_summary', {}, failDeps);
     expect(r.isError).toBe(true);
     expect(r.content).toContain('temporarily unavailable');
-    expect(r.content).toContain('terminal 503');
+    // The raw upstream error must NOT leak into the model-facing content (it can
+    // carry internal endpoint paths / stack traces). It is logged server-side only.
+    expect(r.content).not.toContain('terminal 503');
   });
 });
 

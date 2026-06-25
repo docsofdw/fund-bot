@@ -12,6 +12,9 @@ beforeAll(() => {
   process.env.BTCTC_SHEET_ID ||= 'x';
   process.env.DAILY_REPORTS_CHANNEL_ID ||= 'x';
   process.env.ASK_FUNDBOT_CHANNEL_ID ||= 'x';
+  // Terminal API vars are now required by config.ts (the live data source).
+  process.env.TERMINAL_API_URL ||= 'https://terminal.example.test';
+  process.env.BRIEF_API_KEY ||= 'x';
 });
 
 // A scripted Anthropic message. Each call to messages.create() shifts the next
@@ -134,10 +137,12 @@ describe('sendMessageWithTools — tool loop', () => {
     };
     const r = await sendMessageWithTools('sys', 'mtd?', [], failDeps);
     expect(r.response).toContain('could not fetch');
-    // The tool_result fed back to Claude was flagged as an error.
+    // The tool_result fed back to Claude was flagged as an error...
     const secondMsgs = createCalls[1].messages;
     const toolResultTurn = secondMsgs[secondMsgs.length - 1];
     expect(toolResultTurn.content[0].is_error).toBe(true);
-    expect(toolResultTurn.content[0].content).toContain('terminal down');
+    expect(toolResultTurn.content[0].content).toContain('temporarily unavailable');
+    // ...but the raw upstream error must not leak through the tool_result.
+    expect(toolResultTurn.content[0].content).not.toContain('terminal down');
   });
 });

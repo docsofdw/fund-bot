@@ -10,10 +10,11 @@ Fund figures (AUM, performance, holdings, BTC price) come from the **210k termin
 - `fetchBrief()` → `GET {TERMINAL_API_URL}/api/brief` (EOD report)
 
 Both authenticate with `Authorization: Bearer ${BRIEF_API_KEY}` and run the
-`assertPercentUnits` guard, which fails loudly if any percent field exceeds
-±100% (catching the June 2026 100× scaling regression). The terminal is the
-single source of truth — the report path does **not** read Google Sheets,
-Supabase, CoinMarketCap, Twelve Data, or Yahoo Finance.
+`assertPercentUnits` guard, which fails loudly on a scaling regression (the June
+2026 100× bug): short-window fields (1-day, MTD) must stay within ±100%, while
+cumulative returns (YTD) use a wider ±1000% bound so a legitimate triple-digit
+YTD doesn't trip it. The terminal is the single source of truth — the report path
+does **not** read Google Sheets, Supabase, CoinMarketCap, Twelve Data, or Yahoo Finance.
 
 On-chain metrics (Fear & Greed, MVRV, NUPL, funding rate, moving averages) are
 the one exception: they still come directly from Bitcoin Magazine Pro
@@ -241,7 +242,8 @@ CRON_SECRET=...
   EOD AUM snapshot yet today on the terminal side)
 - `BRIEF_API_KEY` invalid/expired, or `TERMINAL_API_URL` misconfigured (a 401/
   4xx from the terminal surfaces as a thrown error in the report)
-- Units guard tripped: if a percent field exceeds ±100% the client throws
+- Units guard tripped: if a percent field exceeds its bound (±100% for 1d/MTD,
+  ±1000% for YTD) the client throws
   `units check failed` — this signals a scaling regression upstream, not a
   display bug
 
