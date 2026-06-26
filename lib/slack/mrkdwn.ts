@@ -31,10 +31,21 @@
 export function toSlackMrkdwn(text: string): string {
   if (!text) return text;
 
-  // 1. Protect fenced code blocks and inline code from any conversion.
+  // Placeholders use a private-use sentinel char (U+E000) as their delimiter
+  // rather than spaces. A sentinel never appears in real text and is not
+  // touched by any pass below (it is not a space/tab, `*`, `_`, `#`, `-`, or a
+  // word char), so a token survives intact even when it ends up as the sole
+  // content of a header or bullet line — whose regexes strip surrounding
+  // whitespace and would otherwise orphan a space-delimited token, leaking it
+  // verbatim to Slack. Carrying no spaces also means the original text spacing
+  // around the stashed run is preserved as-is.
+  const SENT = '\uE000';
   const codeStore: string[] = [];
+  const boldStore: string[] = [];
+
+  // 1. Protect fenced code blocks and inline code from any conversion.
   const stashCode = (match: string): string => {
-    const token = ` CODE${codeStore.length} `;
+    const token = `${SENT}C${codeStore.length}${SENT}`;
     codeStore.push(match);
     return token;
   };
@@ -48,9 +59,8 @@ export function toSlackMrkdwn(text: string): string {
   // 2. Bold: **text** or __text__ -> *text*. Stash the result behind a token
   //    so the single-char italic pass below can't re-rewrite the Slack bold
   //    markers (which are also single asterisks) into underscores.
-  const boldStore: string[] = [];
   const stashBold = (_m: string, inner: string): string => {
-    const token = ` BOLD${boldStore.length} `;
+    const token = `${SENT}B${boldStore.length}${SENT}`;
     boldStore.push(`*${inner}*`);
     return token;
   };
@@ -73,9 +83,22 @@ export function toSlackMrkdwn(text: string): string {
   // 6. Bullets: leading "- " or "* " (with optional indentation) -> "• ".
   out = out.replace(/^([ \t]*)[-*][ \t]+/gm, '$1• ');
 
-  // 7. Restore stashed bold (as Slack *bold*) and protected code spans/blocks.
-  out = out.replace(/ BOLD(\d+) /g, (_m, i) => boldStore[Number(i)]);
-  out = out.replace(/ CODE(\d+) /g, (_m, i) => codeStore[Number(i)]);
+  // 7. Restore stashed bold (as Slack *bold*).
+  out = out.replace(
+    new RegExp(`${SENT}B(\\d+)${SENT}`, 'g'),
+    (_m, i) => boldStore[Number(i)]
+  );
+
+  // 8. A header (or bullet) whose entire text was bold restored to *(*text*)*.
+  //    Collapse that redundant double bold to a single *text*. Run this BEFORE
+  //    code is restored so it can never touch a literal ** inside a code span.
+  out = out.replace(/\*(\*[^*\n]+\*)\*/g, '$1');
+
+  // 9. Restore protected code spans/blocks last, verbatim.
+  out = out.replace(
+    new RegExp(`${SENT}C(\\d+)${SENT}`, 'g'),
+    (_m, i) => codeStore[Number(i)]
+  );
 
   return out;
 }

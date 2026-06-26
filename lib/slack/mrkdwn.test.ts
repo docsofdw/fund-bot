@@ -103,6 +103,25 @@ describe('toSlackMrkdwn', () => {
     expect(toSlackMrkdwn('')).toBe('');
   });
 
+  test('a header whose text is bold collapses to a single bold line', () => {
+    expect(toSlackMrkdwn('## **Bold Heading**')).toBe('*Bold Heading*');
+    expect(toSlackMrkdwn('### **Holdings**')).toBe('*Holdings*');
+  });
+
+  test('never leaks an internal placeholder token', () => {
+    const inputs = [
+      '## **Bold Heading**',
+      '- **bold bullet**',
+      '## `code heading`',
+      '## see **this** detail',
+    ];
+    for (const input of inputs) {
+      const out = toSlackMrkdwn(input);
+      expect(out).not.toContain('\uE000'); // sentinel must never survive
+      expect(out).not.toMatch(/\bB\d+\b|\bC\d+\b/); // no bare token ids
+    }
+  });
+
   test('full answer: bold figures, a link, and footer all survive', () => {
     const input =
       'The fund holds **121,086,240 shares** of [Moon Inc](https://x.co/m), ' +
