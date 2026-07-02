@@ -19,6 +19,7 @@ export interface Brief {
   fund: {
     aumUsd: number | null;
     change1dPct: number | null;
+    ytdPct: number | null;
     asOfDate: string | null;
   };
   topHoldings: BriefHolding[];
@@ -32,6 +33,7 @@ export async function fetchBrief(): Promise<Brief> {
     ['btc.change1dPct', brief.btc?.change1dPct],
     ['fund.change1dPct', brief.fund?.change1dPct],
     // Cumulative YTD can legitimately run triple-digit — use the wider bound.
+    ['fund.ytdPct', brief.fund?.ytdPct, CUMULATIVE_MAX_ABS_PCT],
     ['btcYtdPct', brief.btcYtdPct, CUMULATIVE_MAX_ABS_PCT],
     ...(brief.topHoldings ?? []).map(
       (h, i): [string, number | null | undefined] => [`topHoldings[${i}].change1dPct`, h.change1dPct]
