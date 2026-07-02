@@ -19,6 +19,108 @@
 // corrupt FundBot's exact numbers (e.g. "*121,086,240 shares*"). This
 // converter produces clean, predictable output.
 
+// Matches a Markdown table separator row, e.g. "|---|:--:|---|" or
+// "--- | ---" (outer pipes optional). Requires at least two columns.
+const TABLE_SEPARATOR = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/;
+
+// Matches a "numeric-ish" cell: optional ~ $ + - prefix, digits/commas, an
+// optional decimal, and an optional trailing %. Used to right-align columns
+// that hold only numbers (dollar/percent figures read better right-aligned).
+const NUMERIC_CELL = /^[~$+-]?[\d,]+(\.\d+)?%?$/;
+
+// Strip inline emphasis markers from a table cell so they don't show up
+// literally inside the monospace code block (e.g. "_(2nd line)_" -> "(2nd
+// line)"). Paired markers are removed longest-first so "**" isn't mistaken
+// for two "*".
+function stripCellEmphasis(cell: string): string {
+  return cell
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    .replace(/`(.+?)`/g, '$1');
+}
+
+// Split a table row into trimmed cells, dropping the empty first/last cell
+// produced by leading/trailing pipes (but keeping genuinely empty interior
+// cells).
+function parseTableRow(row: string): string[] {
+  const cells = row.split('|');
+  if (cells.length > 1 && cells[0].trim() === '') cells.shift();
+  if (cells.length > 1 && cells[cells.length - 1].trim() === '') cells.pop();
+  return cells.map((c) => stripCellEmphasis(c.trim()));
+}
+
+// Render a detected Markdown pipe table (header row + body rows, the separator
+// row already consumed) as a fixed-width, column-aligned plain-text table
+// wrapped in a fenced code block. Slack renders fenced blocks in monospace and
+// preserves whitespace, so the columns stay aligned.
+function formatTable(headerRow: string, bodyRows: string[]): string {
+  const header = parseTableRow(headerRow);
+  const body = bodyRows.map(parseTableRow);
+  const numCols = Math.max(header.length, ...body.map((r) => r.length));
+
+  const cellAt = (row: string[], col: number): string => row[col] ?? '';
+
+  const widths: number[] = [];
+  const rightAlign: boolean[] = [];
+  for (let col = 0; col < numCols; col++) {
+    let width = cellAt(header, col).length;
+    const bodyCells = body.map((r) => cellAt(r, col));
+    for (const c of bodyCells) width = Math.max(width, c.length);
+    widths.push(width);
+    const nonEmpty = bodyCells.filter((c) => c !== '');
+    rightAlign.push(nonEmpty.length > 0 && nonEmpty.every((c) => NUMERIC_CELL.test(c)));
+  }
+
+  const SEP = ' │ ';
+  const pad = (row: string[]): string =>
+    widths
+      .map((w, col) => {
+        const cell = cellAt(row, col);
+        return rightAlign[col] ? cell.padStart(w) : cell.padEnd(w);
+      })
+      .join(SEP);
+
+  const divider = widths.map((w) => '─'.repeat(w)).join('─┼─');
+  const lines = [pad(header), divider, ...body.map(pad)];
+  return '```\n' + lines.join('\n') + '\n```';
+}
+
+// Detect Markdown pipe tables in `text` and replace each with a fenced,
+// column-aligned code block (via `stash`, so the block is protected from the
+// bold/bullet/link passes that run afterwards). Pre-existing fenced/inline
+// code has already been stashed by the caller, so tables inside code are never
+// touched here.
+function convertPipeTables(text: string, stash: (block: string) => string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const header = lines[i];
+    const separator = lines[i + 1];
+    const isTable =
+      header !== undefined &&
+      header.includes('|') &&
+      separator !== undefined &&
+      TABLE_SEPARATOR.test(separator);
+    if (isTable) {
+      const bodyRows: string[] = [];
+      let j = i + 2;
+      while (j < lines.length && lines[j].includes('|') && lines[j].trim() !== '') {
+        bodyRows.push(lines[j]);
+        j++;
+      }
+      out.push(stash(formatTable(header, bodyRows)));
+      i = j;
+    } else {
+      out.push(header);
+      i++;
+    }
+  }
+  return out.join('\n');
+}
+
 /**
  * Convert markdown text to Slack mrkdwn.
  *
@@ -55,6 +157,12 @@ export function toSlackMrkdwn(text: string): string {
     .replace(/```[\s\S]*?```/g, stashCode)
     // Then inline code spans (`...`).
     .replace(/`[^`\n]*`/g, stashCode);
+
+  // 1b. Markdown pipe tables -> aligned fenced code block. Runs after code is
+  //     stashed (so tables already inside code are left alone) and stashes its
+  //     own output as a code block, so the bold/bullet/link passes below never
+  //     run inside the rendered table.
+  out = convertPipeTables(out, stashCode);
 
   // 2. Bold: **text** or __text__ -> *text*. Stash the result behind a token
   //    so the single-char italic pass below can't re-rewrite the Slack bold
