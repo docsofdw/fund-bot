@@ -52,7 +52,7 @@ describe('buildEodReportBlocks — Top Holdings', () => {
   const base: Brief = {
     asOf: '2026-06-22T20:00:00.000Z',
     btc: { priceUsd: 64414, change1dPct: 1.86 },
-    fund: { aumUsd: 96000000, change1dPct: -0.1, asOfDate: '2026-06-21' },
+    fund: { aumUsd: 96000000, change1dPct: -0.1, ytdPct: -16.18, asOfDate: '2026-06-21' },
     topHoldings: [
       { name: 'Astra Enterprise Public Company Limited', ticker: 'ASTR', weightPercent: 28.78, change1dPct: -1.64 },
       { name: 'The Smarter Web Company PLC', ticker: 'SWC', weightPercent: 15.95, change1dPct: -4.88 },
@@ -66,6 +66,13 @@ describe('buildEodReportBlocks — Top Holdings', () => {
     const t = holdings();
     expect(t).toContain('BTC YTD: +137.02%');
     expect(t.indexOf('BTC 1D')).toBeLessThan(t.indexOf('BTC YTD'));
+  });
+
+  test('renders Fund YTD in the 210K BRIEF, directly after Fund 1D', () => {
+    const t = holdings();
+    expect(t).toContain('Fund YTD: -16.18%');
+    expect(t.indexOf('Fund 1D')).toBeLessThan(t.indexOf('Fund YTD'));
+    expect(t.indexOf('Fund YTD')).toBeLessThan(t.indexOf('BTC 1D'));
   });
 
   test('maps known tickers to short display names', () => {
